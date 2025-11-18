@@ -1,0 +1,9 @@
+{
+  "name": "Example Project",
+  "description": "A sample project to demonstrate the system",
+  "urlPatterns": [
+    "*://*/*"
+  ],
+  "enabled": true
+}
+

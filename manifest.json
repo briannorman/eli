@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Experimentation Local Interface",
+  "version": "1.0.0",
+  "description": "Local development interface for web experiments with hot reloading",
+  "permissions": [
+    "scripting",
+    "activeTab",
+    "tabs",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "http://localhost:8000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Experimentation Local Interface"
+  }
+}
