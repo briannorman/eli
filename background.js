@@ -22,9 +22,9 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   // Only auto-inject on complete page loads (not iframes)
   if (changeInfo.status === 'complete' && tab.url && tabId && tab.url.startsWith('http')) {
     // Check if auto-inject is enabled and get selected project
-    const result = await chrome.storage.local.get(['autoInject', 'selectedProject', 'selectedFile']);
+    const result = await chrome.storage.local.get(['autoInject', 'selectedProject', 'selectedVariant']);
     
-    if (result.autoInject && result.selectedProject && result.selectedFile) {
+    if (result.autoInject && result.selectedProject && result.selectedVariant) {
       try {
         // Get project config to check URL patterns
         const configResponse = await fetch(`http://localhost:8000/api/project/${result.selectedProject}/config`);
@@ -44,7 +44,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         
         if (shouldInject) {
           const timestamp = Date.now();
-          const scriptUrl = `http://localhost:8000/api/project/${result.selectedProject}/${result.selectedFile}?v=${timestamp}`;
+          const scriptUrl = `http://localhost:8000/api/project/${result.selectedProject}/${result.selectedVariant}/script.js?v=${timestamp}`;
           
           const response = await fetch(scriptUrl);
           if (response.ok) {

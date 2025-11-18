@@ -3,6 +3,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const sass = require('sass');
 
 // Get the project root directory (where this script is located)
 const PROJECT_ROOT = path.resolve(__dirname, '..');
@@ -39,30 +40,215 @@ function getProjectConfig(projectName) {
   };
 }
 
-// Get list of JS files in a project
-function getProjectFiles(projectName) {
+// Get list of variant folders in a project
+function getProjectVariants(projectName) {
   const projectPath = path.join(PROJECTS_DIR, projectName);
   try {
     const entries = fs.readdirSync(projectPath, { withFileTypes: true });
     return entries
-      .filter(entry => entry.isFile() && entry.name.endsWith('.js'))
+      .filter(entry => entry.isDirectory())
       .map(entry => entry.name)
       .sort();
   } catch (error) {
-    console.error(`Error reading files for ${projectName}:`, error);
+    console.error(`Error reading variants for ${projectName}:`, error);
     return [];
   }
 }
 
-// Get project script file
-function getProjectScript(projectName, filename) {
-  const scriptPath = path.join(PROJECTS_DIR, projectName, filename);
+// Process HTML imports in JS code
+function processHtmlImports(jsContent, variantPath) {
+  // Match: import variableName from './filename.html';
+  const importRegex = /import\s+(\w+)\s+from\s+['"](\.\/)?([^'"]+\.html)['"];?/g;
+  
+  let processedContent = jsContent;
+  let match;
+  const originalContent = jsContent; // Store original for regex reset
+  
+  while ((match = importRegex.exec(originalContent)) !== null) {
+    const [fullMatch, varName, relativePath, htmlFileName] = match;
+    const htmlPath = path.join(variantPath, htmlFileName);
+    
+    try {
+      if (fs.existsSync(htmlPath)) {
+        const htmlContent = fs.readFileSync(htmlPath, 'utf8');
+        // Escape the HTML for use in a JavaScript string
+        const escapedHtml = htmlContent
+          .replace(/\\/g, '\\\\')
+          .replace(/`/g, '\\`')
+          .replace(/\${/g, '\\${')
+          .replace(/\n/g, '\\n')
+          .replace(/\r/g, '\\r');
+        
+        // Replace import with const declaration using template literal
+        const replacement = `const ${varName} = \`${escapedHtml}\`;`;
+        processedContent = processedContent.replace(fullMatch, replacement);
+        console.log(`[ELI] Processed HTML import: ${htmlFileName} -> ${varName}`);
+      } else {
+        console.warn(`[ELI] HTML file not found: ${htmlPath}`);
+        // Replace with empty string if file not found
+        processedContent = processedContent.replace(fullMatch, `const ${varName} = '';`);
+      }
+    } catch (error) {
+      console.error(`[ELI] Error processing HTML import ${htmlFileName}:`, error);
+      processedContent = processedContent.replace(fullMatch, `const ${varName} = '';`);
+    }
+  }
+  
+  return processedContent;
+}
+
+// Process SCSS imports in JS code
+function processScssImports(jsContent, variantPath) {
+  // Match: import variableName from './filename.scss';
+  const importRegex = /import\s+(\w+)\s+from\s+['"](\.\/)?([^'"]+\.scss)['"];?/g;
+  
+  let processedContent = jsContent;
+  let match;
+  const originalContent = jsContent; // Store original for regex reset
+  
+  while ((match = importRegex.exec(originalContent)) !== null) {
+    const [fullMatch, varName, relativePath, scssFileName] = match;
+    const scssPath = path.join(variantPath, scssFileName);
+    
+    try {
+      if (fs.existsSync(scssPath)) {
+        // Compile SCSS to CSS
+        const result = sass.compile(scssPath, {
+          style: 'expanded',
+          sourceMap: false
+        });
+        
+        const cssContent = result.css;
+        
+        // Escape the CSS for use in a JavaScript string
+        const escapedCss = cssContent
+          .replace(/\\/g, '\\\\')
+          .replace(/`/g, '\\`')
+          .replace(/\${/g, '\\${')
+          .replace(/\n/g, '\\n')
+          .replace(/\r/g, '\\r');
+        
+        // Replace import with code that injects the CSS as a style tag
+        const replacement = `const ${varName} = \`${escapedCss}\`; (function() { const style = document.createElement('style'); style.textContent = ${varName}; document.head.appendChild(style); })();`;
+        processedContent = processedContent.replace(fullMatch, replacement);
+        console.log(`[ELI] Processed SCSS import: ${scssFileName} -> ${varName} (compiled to CSS)`);
+      } else {
+        console.warn(`[ELI] SCSS file not found: ${scssPath}`);
+        // Replace with no-op if file not found
+        processedContent = processedContent.replace(fullMatch, '');
+      }
+    } catch (error) {
+      console.error(`[ELI] Error processing SCSS import ${scssFileName}:`, error);
+      processedContent = processedContent.replace(fullMatch, '');
+    }
+  }
+  
+  return processedContent;
+}
+
+// Process JS imports in JS code
+function processJsImports(jsContent, variantPath, projectPath) {
+  // Match: import variableName from './filename.js' or '../filename.js'
+  const importRegex = /import\s+(\w+)\s+from\s+['"]([^'"]+\.js)['"];?/g;
+  
+  let processedContent = jsContent;
+  let match;
+  const originalContent = jsContent; // Store original for regex reset
+  
+  while ((match = importRegex.exec(originalContent)) !== null) {
+    const [fullMatch, varName, jsFilePath] = match;
+    
+    // Resolve the path relative to the variant folder
+    let jsPath;
+    if (jsFilePath.startsWith('./') || jsFilePath.startsWith('../')) {
+      // Relative path - resolve from variant folder
+      jsPath = path.resolve(variantPath, jsFilePath);
+    } else {
+      // Absolute path from project root
+      jsPath = path.join(projectPath, jsFilePath);
+    }
+    
+    // Security: ensure the resolved path is within the project directory
+    const normalizedPath = path.normalize(jsPath);
+    if (!normalizedPath.startsWith(projectPath)) {
+      console.warn(`[ELI] JS import path outside project: ${jsFilePath}`);
+      processedContent = processedContent.replace(fullMatch, '');
+      continue;
+    }
+    
+    try {
+      if (fs.existsSync(jsPath)) {
+        let jsFileContent = fs.readFileSync(jsPath, 'utf8');
+        
+        // Recursively process imports in the imported file
+        const importedFileDir = path.dirname(jsPath);
+        jsFileContent = processHtmlImports(jsFileContent, importedFileDir);
+        jsFileContent = processScssImports(jsFileContent, importedFileDir);
+        jsFileContent = processJsImports(jsFileContent, importedFileDir, projectPath);
+        
+        // Check if the file exports a default value
+        const exportDefaultMatch = jsFileContent.match(/export\s+default\s+(.+);?\s*$/);
+        
+        let replacement;
+        if (exportDefaultMatch) {
+          // File exports a value - use it
+          const exportedValue = exportDefaultMatch[1].trim();
+          replacement = `const ${varName} = ${exportedValue};`;
+        } else {
+          // File doesn't export - wrap code in a function
+          // This allows the imported code to be called as a function
+          replacement = `const ${varName} = function() { ${jsFileContent} };`;
+        }
+        
+        processedContent = processedContent.replace(fullMatch, replacement);
+        console.log(`[ELI] Processed JS import: ${jsFilePath} -> ${varName}`);
+      } else {
+        console.warn(`[ELI] JS file not found: ${jsPath}`);
+        // Replace with undefined variable if file not found
+        processedContent = processedContent.replace(fullMatch, `const ${varName} = undefined;`);
+      }
+    } catch (error) {
+      console.error(`[ELI] Error processing JS import ${jsFilePath}:`, error);
+      processedContent = processedContent.replace(fullMatch, `const ${varName} = undefined;`);
+    }
+  }
+  
+  return processedContent;
+}
+
+// Get JS file in a variant folder (finds any .js file in the variant folder)
+function getVariantScript(projectName, variantName) {
+  const variantPath = path.join(PROJECTS_DIR, projectName, variantName);
   try {
-    if (fs.existsSync(scriptPath)) {
-      return fs.readFileSync(scriptPath, 'utf8');
+    const entries = fs.readdirSync(variantPath, { withFileTypes: true });
+    const jsFiles = entries
+      .filter(entry => entry.isFile() && entry.name.endsWith('.js'))
+      .map(entry => entry.name)
+      .sort();
+    
+    if (jsFiles.length > 0) {
+      // Return the first JS file found (or prefer one matching the variant name)
+      const preferredFile = jsFiles.find(f => f === `${variantName}.js`) || jsFiles[0];
+      const scriptPath = path.join(variantPath, preferredFile);
+      const projectPath = path.join(PROJECTS_DIR, projectName);
+      let content = fs.readFileSync(scriptPath, 'utf8');
+      
+      // Process HTML imports
+      content = processHtmlImports(content, variantPath);
+      
+      // Process SCSS imports
+      content = processScssImports(content, variantPath);
+      
+      // Process JS imports (must be last to handle nested imports)
+      content = processJsImports(content, variantPath, projectPath);
+      
+      return {
+        filename: preferredFile,
+        content: content
+      };
     }
   } catch (error) {
-    console.error(`Error reading script ${filename} for ${projectName}:`, error);
+    console.error(`Error reading variant ${variantName} for ${projectName}:`, error);
   }
   return null;
 }
@@ -105,14 +291,14 @@ const server = http.createServer((req, res) => {
     const projectNames = getProjects();
     const projects = projectNames.map(name => {
       const config = getProjectConfig(name);
-      const files = getProjectFiles(name);
+      const variants = getProjectVariants(name);
       return {
         name: name,
         displayName: config.name || name,
         description: config.description || '',
         urlPatterns: config.urlPatterns || ['*://*/*'],
         enabled: config.enabled !== false,
-        files: files
+        variants: variants
       };
     });
     res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
@@ -120,17 +306,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // List files in a project endpoint
-  const filesMatch = req.url.match(/^\/api\/project\/([^\/]+)\/files$/);
-  if (filesMatch && req.method === 'GET') {
-    const projectName = filesMatch[1];
-    const files = getProjectFiles(projectName);
-    res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ files }));
-    return;
-  }
-
-  // Get project config endpoint
+  // Get project config endpoint (check before variant routes)
   const configMatch = req.url.match(/^\/api\/project\/([^\/]+)\/config$/);
   if (configMatch && req.method === 'GET') {
     const projectName = configMatch[1];
@@ -140,23 +316,33 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Get project script file endpoint - supports any .js file
-  // Format: /api/project/:projectName/:filename.js
-  const projectMatch = req.url.match(/^\/api\/project\/([^\/]+)\/([^\/]+\.js)(\?v=(\d+))?$/);
-  if (projectMatch && req.method === 'GET') {
-    const projectName = projectMatch[1];
-    const filename = projectMatch[2];
+  // List variants in a project endpoint (check before variant script route)
+  const variantsMatch = req.url.match(/^\/api\/project\/([^\/]+)\/variants$/);
+  if (variantsMatch && req.method === 'GET') {
+    const projectName = variantsMatch[1];
+    const variants = getProjectVariants(projectName);
+    res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ variants }));
+    return;
+  }
+
+  // Get variant script endpoint
+  // Format: /api/project/:projectName/:variantName/script.js
+  const variantMatch = req.url.match(/^\/api\/project\/([^\/]+)\/([^\/]+)\/script\.js(\?v=(\d+))?$/);
+  if (variantMatch && req.method === 'GET') {
+    const projectName = variantMatch[1];
+    const variantName = variantMatch[2];
     
-    // Security: ensure filename doesn't contain path traversal
-    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+    // Security: ensure variant name doesn't contain path traversal
+    if (variantName.includes('..') || variantName.includes('/') || variantName.includes('\\')) {
       res.writeHead(400, corsHeaders);
-      res.end('Invalid filename');
+      res.end('Invalid variant name');
       return;
     }
     
-    const script = getProjectScript(projectName, filename);
+    const scriptData = getVariantScript(projectName, variantName);
     
-    if (script) {
+    if (scriptData && scriptData.content) {
       // Add cache busting timestamp
       res.writeHead(200, {
         ...corsHeaders,
@@ -165,10 +351,10 @@ const server = http.createServer((req, res) => {
         'Pragma': 'no-cache',
         'Expires': '0'
       });
-      res.end(script);
+      res.end(scriptData.content);
     } else {
       res.writeHead(404, corsHeaders);
-      res.end(`File ${filename} not found in project ${projectName}`);
+      res.end(`Variant ${variantName} not found in project ${projectName} or no JS file found`);
     }
     return;
   }

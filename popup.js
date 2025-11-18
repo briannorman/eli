@@ -2,23 +2,23 @@ const API_BASE = 'http://localhost:8000/api';
 
 let projects = [];
 let selectedProject = null;
-let selectedFile = null;
+let selectedVariant = null;
 
 // Load saved preferences
 async function loadSavedPreferences() {
-  const result = await chrome.storage.local.get(['selectedProject', 'selectedFile', 'autoInject']);
+  const result = await chrome.storage.local.get(['selectedProject', 'selectedVariant', 'autoInject']);
   return {
     project: result.selectedProject || null,
-    file: result.selectedFile || null,
+    variant: result.selectedVariant || null,
     autoInject: result.autoInject || false
   };
 }
 
 // Save project preference
-async function saveProject(projectName, filename = null) {
+async function saveProject(projectName, variantName = null) {
   await chrome.storage.local.set({ 
     selectedProject: projectName,
-    selectedFile: filename
+    selectedVariant: variantName
   });
 }
 
@@ -34,17 +34,17 @@ async function fetchProjects() {
     const data = await response.json();
     const projects = data.projects || [];
     
-    // If projects don't have files, fetch them individually
+    // If projects don't have variants, fetch them individually
     for (const project of projects) {
-      if (!project.files || project.files.length === 0) {
+      if (!project.variants || project.variants.length === 0) {
         try {
-          const filesResponse = await fetch(`${API_BASE}/project/${project.name}/files`);
-          const filesData = await filesResponse.json();
-          project.files = filesData.files || [];
-          console.log(`[ELI] Fetched files for ${project.name}:`, project.files);
+          const variantsResponse = await fetch(`${API_BASE}/project/${project.name}/variants`);
+          const variantsData = await variantsResponse.json();
+          project.variants = variantsData.variants || [];
+          console.log(`[ELI] Fetched variants for ${project.name}:`, project.variants);
         } catch (e) {
-          console.warn(`[ELI] Could not fetch files for ${project.name}:`, e);
-          project.files = [];
+          console.warn(`[ELI] Could not fetch variants for ${project.name}:`, e);
+          project.variants = [];
         }
       }
     }
@@ -76,32 +76,32 @@ function urlMatchesAnyPattern(url, patterns) {
   return patterns.some(pattern => urlMatchesPattern(url, pattern));
 }
 
-// Populate file dropdown
-function populateFiles(project) {
-  const fileSelect = document.getElementById('fileSelect');
-  const fileLabel = document.getElementById('fileSelectLabel');
+// Populate variant dropdown
+function populateVariants(project) {
+  const variantSelect = document.getElementById('variantSelect');
+  const variantLabel = document.getElementById('variantSelectLabel');
   
-  console.log('[ELI] populateFiles called with project:', project);
-  console.log('[ELI] project.files:', project?.files);
+  console.log('[ELI] populateVariants called with project:', project);
+  console.log('[ELI] project.variants:', project?.variants);
   
-  if (!project || !project.files || project.files.length === 0) {
-    console.warn('[ELI] No files to display, hiding dropdown');
-    fileSelect.style.display = 'none';
-    fileLabel.style.display = 'none';
-    fileSelect.innerHTML = '<option value="">-- No files available --</option>';
+  if (!project || !project.variants || project.variants.length === 0) {
+    console.warn('[ELI] No variants to display, hiding dropdown');
+    variantSelect.style.display = 'none';
+    variantLabel.style.display = 'none';
+    variantSelect.innerHTML = '<option value="">-- No variants available --</option>';
     return;
   }
   
-  console.log('[ELI] Showing file dropdown with', project.files.length, 'files');
-  fileSelect.style.display = 'block';
-  fileLabel.style.display = 'block';
-  fileSelect.innerHTML = '<option value="">-- Select a file --</option>';
+  console.log('[ELI] Showing variant dropdown with', project.variants.length, 'variants');
+  variantSelect.style.display = 'block';
+  variantLabel.style.display = 'block';
+  variantSelect.innerHTML = '<option value="">-- Select a variant --</option>';
   
-  project.files.forEach(filename => {
+  project.variants.forEach(variantName => {
     const option = document.createElement('option');
-    option.value = filename;
-    option.textContent = filename;
-    fileSelect.appendChild(option);
+    option.value = variantName;
+    option.textContent = variantName;
+    variantSelect.appendChild(option);
   });
 }
 
@@ -125,16 +125,16 @@ function populateProjects(projectList) {
       if (project) {
         select.value = prefs.project;
         selectedProject = prefs.project;
-        populateFiles(project);
+        populateVariants(project);
         
-        // Restore selected file
-        if (prefs.file && project.files && project.files.includes(prefs.file)) {
-          document.getElementById('fileSelect').value = prefs.file;
-          selectedFile = prefs.file;
-        } else if (project.files && project.files.length > 0) {
-          // Auto-select first file if available
-          selectedFile = project.files[0];
-          document.getElementById('fileSelect').value = selectedFile;
+        // Restore selected variant
+        if (prefs.variant && project.variants && project.variants.includes(prefs.variant)) {
+          document.getElementById('variantSelect').value = prefs.variant;
+          selectedVariant = prefs.variant;
+        } else if (project.variants && project.variants.length > 0) {
+          // Auto-select first variant if available
+          selectedVariant = project.variants[0];
+          document.getElementById('variantSelect').value = selectedVariant;
         }
         
         await updateProjectInfo(project);
@@ -192,14 +192,14 @@ async function updateProjectInfo(project) {
 // Update inject button state
 function updateInjectButtonState() {
   const injectBtn = document.getElementById('injectBtn');
-  injectBtn.disabled = !selectedProject || !selectedFile;
+  injectBtn.disabled = !selectedProject || !selectedVariant;
 }
 
 // Inject script into current tab
-async function injectScript(projectName, filename) {
+async function injectScript(projectName, variantName) {
   try {
-    if (!filename) {
-      showStatus('Please select a file to inject', 'error');
+    if (!variantName) {
+      showStatus('Please select a variant to inject', 'error');
       return;
     }
     
@@ -222,7 +222,7 @@ async function injectScript(projectName, filename) {
 
     // Get script with cache busting
     const timestamp = Date.now();
-    const scriptUrl = `${API_BASE}/project/${projectName}/${filename}?v=${timestamp}`;
+    const scriptUrl = `${API_BASE}/project/${projectName}/${variantName}/script.js?v=${timestamp}`;
     
     const response = await fetch(scriptUrl);
     if (!response.ok) {
@@ -266,13 +266,13 @@ async function injectScript(projectName, filename) {
       args: [scriptText]
     });
     
-    await saveProject(projectName, filename);
+    await saveProject(projectName, variantName);
     selectedProject = projectName;
-    selectedFile = filename;
+    selectedVariant = variantName;
     if (project) {
       await updateProjectInfo(project);
     }
-    showStatus(`Injected: ${project?.displayName || projectName} - ${filename}`, 'success');
+    showStatus(`Injected: ${project?.displayName || projectName} - ${variantName}`, 'success');
   } catch (error) {
     console.error('Injection error:', error);
     showStatus(`Error: ${error.message}`, 'error');
@@ -302,44 +302,44 @@ async function init() {
   const select = document.getElementById('projectSelect');
   const injectBtn = document.getElementById('injectBtn');
   
-  const fileSelect = document.getElementById('fileSelect');
+  const variantSelect = document.getElementById('variantSelect');
   
   select.addEventListener('change', async (e) => {
     selectedProject = e.target.value;
-    selectedFile = null;
+    selectedVariant = null;
     
     if (selectedProject) {
       const project = projects.find(p => p.name === selectedProject);
       if (project) {
-        console.log('[ELI] Selected project:', project.name, 'Files:', project.files);
-        populateFiles(project);
-        // Auto-select first file if available
-        if (project.files && project.files.length > 0) {
-          selectedFile = project.files[0];
-          fileSelect.value = selectedFile;
-          console.log('[ELI] Auto-selected file:', selectedFile);
+        console.log('[ELI] Selected project:', project.name, 'Variants:', project.variants);
+        populateVariants(project);
+        // Auto-select first variant if available
+        if (project.variants && project.variants.length > 0) {
+          selectedVariant = project.variants[0];
+          variantSelect.value = selectedVariant;
+          console.log('[ELI] Auto-selected variant:', selectedVariant);
         } else {
-          console.warn('[ELI] No files found for project:', project.name);
+          console.warn('[ELI] No variants found for project:', project.name);
         }
         await updateProjectInfo(project);
       }
     } else {
-      fileSelect.style.display = 'none';
-      document.getElementById('fileSelectLabel').style.display = 'none';
+      variantSelect.style.display = 'none';
+      document.getElementById('variantSelectLabel').style.display = 'none';
       updateProjectInfo(null);
     }
     updateInjectButtonState();
   });
   
-  fileSelect.addEventListener('change', (e) => {
-    selectedFile = e.target.value;
+  variantSelect.addEventListener('change', (e) => {
+    selectedVariant = e.target.value;
     updateInjectButtonState();
   });
   
   // Inject button
   injectBtn.addEventListener('click', async () => {
-    if (selectedProject && selectedFile) {
-      await injectScript(selectedProject, selectedFile);
+    if (selectedProject && selectedVariant) {
+      await injectScript(selectedProject, selectedVariant);
     }
   });
   
@@ -348,17 +348,17 @@ async function init() {
     projects = await fetchProjects();
     populateProjects(projects);
     
-    // If a project is selected, refresh its file list
+    // If a project is selected, refresh its variant list
     if (selectedProject) {
       const project = projects.find(p => p.name === selectedProject);
       if (project) {
-        populateFiles(project);
-        // Re-select the file if it still exists
-        if (selectedFile && project.files && project.files.includes(selectedFile)) {
-          document.getElementById('fileSelect').value = selectedFile;
-        } else if (project.files && project.files.length > 0) {
-          selectedFile = project.files[0];
-          document.getElementById('fileSelect').value = selectedFile;
+        populateVariants(project);
+        // Re-select the variant if it still exists
+        if (selectedVariant && project.variants && project.variants.includes(selectedVariant)) {
+          document.getElementById('variantSelect').value = selectedVariant;
+        } else if (project.variants && project.variants.length > 0) {
+          selectedVariant = project.variants[0];
+          document.getElementById('variantSelect').value = selectedVariant;
         }
         updateInjectButtonState();
       }
