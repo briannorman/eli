@@ -68,7 +68,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
                   })();
                   
                   window.__eli_injected.push(Date.now());
-                  console.log('[ELI] Script auto-executed successfully in MAIN world');
+                  // console.log('[ELI] Script auto-executed successfully in MAIN world');
                 } catch (error) {
                   console.error('[ELI] Auto-execution error:', error);
                   // Try alternative execution method

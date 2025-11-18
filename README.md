@@ -58,16 +58,19 @@ The server will start on `http://localhost:8000` and serve your project scripts.
    mkdir projects/my-experiment
    ```
 
-2. Create a `script.js` file in that folder:
+2. Create one or more JavaScript files in that folder (any name ending in `.js`):
    ```bash
-   touch projects/my-experiment/script.js
+   touch projects/my-experiment/v1.js
+   touch projects/my-experiment/v2.js
    ```
 
-3. Add your experiment code to `script.js`:
+3. Add your experiment code to any of the JS files:
    ```javascript
    console.log('My experiment is running!');
    // Your code here
    ```
+
+   **Note:** Config files are not required. Projects work with just JS files. All projects will run on all URLs by default.
 
 ## Usage
 
@@ -95,9 +98,11 @@ Enable the "Auto-inject on page load" checkbox in the extension popup to automat
 eli/
 ├── projects/
 │   ├── example-project/
-│   │   └── script.js
+│   │   ├── v1.js
+│   │   └── v2.js
 │   └── my-experiment/
-│       └── script.js
+│       ├── test.js
+│       └── production.js
 ├── background.js          # Extension background service worker
 ├── popup.html            # Extension popup UI
 ├── popup.js              # Extension popup logic
@@ -107,16 +112,20 @@ eli/
 └── README.md            # This file
 ```
 
+**Note:** Projects only need JavaScript files. No config files are required. Each project folder can contain multiple `.js` files, and you can select which one to inject from the extension popup.
+
 ## API Endpoints
 
 The development server exposes the following endpoints:
 
-- `GET /api/projects` - Returns a list of all available projects
-- `GET /api/project/:projectName/script.js` - Returns the script for a specific project (with cache busting)
+- `GET /api/projects` - Returns a list of all available projects with their JS files
+- `GET /api/project/:projectName/:filename.js` - Returns a specific JS file from a project (with cache busting)
+- `GET /api/project/:projectName/files` - Returns a list of all JS files in a project
 
 ## Tips
 
-- **Multiple projects**: Create as many project folders as you need. Each should contain a `script.js` file.
+- **Multiple projects**: Create as many project folders as you need. Each folder can contain multiple `.js` files.
+- **Multiple files per project**: You can have `v1.js`, `v2.js`, `test.js`, etc. in the same project folder. Select which one to inject from the extension popup.
 - **Cache busting**: The server automatically adds cache-busting parameters to ensure you always get the latest version of your script.
 - **Team collaboration**: Share the project folder via git. Each team member runs their own local server.
 - **Debugging**: Use Chrome DevTools console to see logs and debug your experiments.
@@ -129,13 +138,14 @@ The development server exposes the following endpoints:
 
 **Script doesn't update after changes**
 - Make sure you're reloading the page after making changes
-- Check that your `script.js` file is saved
+- Check that your JS file is saved
 - Try clicking "Refresh Projects" in the extension popup
 
 **Script doesn't inject**
-- Make sure you've selected a project from the dropdown
+- Make sure you've selected both a project and a file from the dropdowns
 - Check the browser console for any errors
-- Verify that your `script.js` file exists in the project folder
+- Verify that your JS file exists in the project folder
+- Make sure the development server is running
 
 ## License
 

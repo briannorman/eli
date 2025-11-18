@@ -25,18 +25,9 @@ function getProjects() {
   }
 }
 
-// Get project config
+// Get project config (always returns defaults - config files are not required)
 function getProjectConfig(projectName) {
-  const configPath = path.join(PROJECTS_DIR, projectName, 'config.json');
-  try {
-    if (fs.existsSync(configPath)) {
-      const configContent = fs.readFileSync(configPath, 'utf8');
-      return JSON.parse(configContent);
-    }
-  } catch (error) {
-    console.error(`Error reading config for ${projectName}:`, error);
-  }
-  // Return default config if no config.json exists
+  // Config files are optional - always use defaults
   return {
     name: projectName,
     description: '',

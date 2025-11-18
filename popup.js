@@ -32,7 +32,24 @@ async function fetchProjects() {
   try {
     const response = await fetch(`${API_BASE}/projects`);
     const data = await response.json();
-    return data.projects || [];
+    const projects = data.projects || [];
+    
+    // If projects don't have files, fetch them individually
+    for (const project of projects) {
+      if (!project.files || project.files.length === 0) {
+        try {
+          const filesResponse = await fetch(`${API_BASE}/project/${project.name}/files`);
+          const filesData = await filesResponse.json();
+          project.files = filesData.files || [];
+          console.log(`[ELI] Fetched files for ${project.name}:`, project.files);
+        } catch (e) {
+          console.warn(`[ELI] Could not fetch files for ${project.name}:`, e);
+          project.files = [];
+        }
+      }
+    }
+    
+    return projects;
   } catch (error) {
     console.error('Failed to fetch projects:', error);
     showStatus('Error: Could not connect to server. Make sure the server is running.', 'error');
@@ -64,13 +81,18 @@ function populateFiles(project) {
   const fileSelect = document.getElementById('fileSelect');
   const fileLabel = document.getElementById('fileSelectLabel');
   
+  console.log('[ELI] populateFiles called with project:', project);
+  console.log('[ELI] project.files:', project?.files);
+  
   if (!project || !project.files || project.files.length === 0) {
+    console.warn('[ELI] No files to display, hiding dropdown');
     fileSelect.style.display = 'none';
     fileLabel.style.display = 'none';
     fileSelect.innerHTML = '<option value="">-- No files available --</option>';
     return;
   }
   
+  console.log('[ELI] Showing file dropdown with', project.files.length, 'files');
   fileSelect.style.display = 'block';
   fileLabel.style.display = 'block';
   fileSelect.innerHTML = '<option value="">-- Select a file --</option>';
@@ -289,11 +311,15 @@ async function init() {
     if (selectedProject) {
       const project = projects.find(p => p.name === selectedProject);
       if (project) {
+        console.log('[ELI] Selected project:', project.name, 'Files:', project.files);
         populateFiles(project);
         // Auto-select first file if available
         if (project.files && project.files.length > 0) {
           selectedFile = project.files[0];
           fileSelect.value = selectedFile;
+          console.log('[ELI] Auto-selected file:', selectedFile);
+        } else {
+          console.warn('[ELI] No files found for project:', project.name);
         }
         await updateProjectInfo(project);
       }
