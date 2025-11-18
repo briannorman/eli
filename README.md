@@ -1,4 +1,4 @@
-# Web Experiments Development Tool
+# Experimentation Local Interface
 
 A local development interface for creating and testing web experiments. This tool allows you to organize experiments in separate project folders and inject them into any web page via a Chrome extension.
 
