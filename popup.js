@@ -136,8 +136,6 @@ function populateProjects(projectList) {
           selectedVariant = project.variants[0];
           document.getElementById('variantSelect').value = selectedVariant;
         }
-        
-        await updateProjectInfo(project);
       }
     }
     document.getElementById('autoInjectCheck').checked = prefs.autoInject;
@@ -156,36 +154,6 @@ function showStatus(message, type = 'info') {
     setTimeout(() => {
       statusDiv.style.display = 'none';
     }, 3000);
-  }
-}
-
-// Update project info display
-async function updateProjectInfo(project) {
-  const infoDiv = document.getElementById('projectInfo');
-  
-  if (project) {
-    // Check if current page matches URL patterns
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    let matchStatus = '';
-    if (tab && tab.url) {
-      const matches = urlMatchesAnyPattern(tab.url, project.urlPatterns || []);
-      matchStatus = matches 
-        ? ' ✓ URL matches' 
-        : ' ⚠ URL does not match patterns';
-    }
-    
-    const urlPatternsText = (project.urlPatterns || []).join(', ');
-    infoDiv.innerHTML = `
-      <div><strong>Active Project:</strong> ${project.displayName || project.name}</div>
-      ${project.description ? `<div style="margin-top: 5px; font-size: 11px; color: #888;">${project.description}</div>` : ''}
-      <div style="margin-top: 5px; font-size: 11px; color: #666;">
-        <strong>URL Patterns:</strong> ${urlPatternsText || 'All URLs'}
-        ${matchStatus ? `<span style="color: ${matchStatus.includes('✓') ? '#28a745' : '#ffc107'};">${matchStatus}</span>` : ''}
-      </div>
-    `;
-    infoDiv.style.display = 'block';
-  } else {
-    infoDiv.style.display = 'none';
   }
 }
 
@@ -290,9 +258,6 @@ async function injectScript(projectName, variantName) {
     await saveProject(projectName, variantName);
     selectedProject = projectName;
     selectedVariant = variantName;
-    if (project) {
-      await updateProjectInfo(project);
-    }
     showStatus(`Injected: ${project?.displayName || projectName} - ${variantName}`, 'success');
   } catch (error) {
     console.error('Injection error:', error);
@@ -342,19 +307,24 @@ async function init() {
         } else {
           console.warn('[ELI] No variants found for project:', project.name);
         }
-        await updateProjectInfo(project);
       }
     } else {
       variantSelect.style.display = 'none';
       document.getElementById('variantSelectLabel').style.display = 'none';
-      updateProjectInfo(null);
     }
     updateInjectButtonState();
   });
   
-  variantSelect.addEventListener('change', (e) => {
+  variantSelect.addEventListener('change', async (e) => {
+    const previousVariant = selectedVariant;
     selectedVariant = e.target.value;
     updateInjectButtonState();
+    
+    // If variant changed and we have a project selected, refresh the page
+    if (selectedVariant && selectedVariant !== previousVariant && selectedProject) {
+      await saveProject(selectedProject, selectedVariant);
+      await reloadCurrentPage();
+    }
   });
   
   // Inject button
@@ -363,32 +333,6 @@ async function init() {
       await injectScript(selectedProject, selectedVariant);
     }
   });
-  
-  // Refresh projects button
-  document.getElementById('refreshBtn').addEventListener('click', async () => {
-    projects = await fetchProjects();
-    populateProjects(projects);
-    
-    // If a project is selected, refresh its variant list
-    if (selectedProject) {
-      const project = projects.find(p => p.name === selectedProject);
-      if (project) {
-        populateVariants(project);
-        // Re-select the variant if it still exists
-        if (selectedVariant && project.variants && project.variants.includes(selectedVariant)) {
-          document.getElementById('variantSelect').value = selectedVariant;
-        } else if (project.variants && project.variants.length > 0) {
-          selectedVariant = project.variants[0];
-          document.getElementById('variantSelect').value = selectedVariant;
-        }
-        updateInjectButtonState();
-      }
-    }
-    showStatus('Projects refreshed', 'success');
-  });
-  
-  // Reload page button
-  document.getElementById('reloadBtn').addEventListener('click', reloadCurrentPage);
   
   // Auto-inject checkbox
   document.getElementById('autoInjectCheck').addEventListener('change', async (e) => {

@@ -12,7 +12,7 @@ document.head.insertAdjacentHTML('beforeend', `<style>${v1Scss}</style>`);
 
 // use the utils to wait for an element to appear and then change the text content
 utils.waitForElement('body h1').then(bodyH1 => {
-  bodyH1.textContent = 'ELI: Project 1 v1 loaded!';
+  bodyH1.textContent = 'ELI: example-project - v1 loaded!';
   console.log('ELI: bodyH1 found!');
 });
 
@@ -27,4 +27,4 @@ setTimeout(() => {
   console.log('ELI: example-storage-item set!');
 }, 5000);
 
-console.log('ELI: Project 1 v1 loaded!');
+console.log('ELI: example-project - v1 loaded!');

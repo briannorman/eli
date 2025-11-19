@@ -345,6 +345,38 @@ async function minifyScript(code) {
   }
 }
 
+// Minify CSS code
+function minifyCss(css) {
+  try {
+    // Remove comments (/* ... */)
+    let minified = css.replace(/\/\*[\s\S]*?\*\//g, '');
+    
+    // Remove extra whitespace
+    minified = minified.replace(/\s+/g, ' ');
+    
+    // Remove whitespace around specific characters
+    minified = minified.replace(/\s*{\s*/g, '{');
+    minified = minified.replace(/\s*}\s*/g, '}');
+    minified = minified.replace(/\s*:\s*/g, ':');
+    minified = minified.replace(/\s*;\s*/g, ';');
+    minified = minified.replace(/\s*,\s*/g, ',');
+    minified = minified.replace(/\s*>\s*/g, '>');
+    minified = minified.replace(/\s*\+\s*/g, '+');
+    minified = minified.replace(/\s*~\s*/g, '~');
+    
+    // Remove trailing semicolons before closing braces
+    minified = minified.replace(/;}/g, '}');
+    
+    // Remove leading/trailing whitespace
+    minified = minified.trim();
+    
+    return minified;
+  } catch (error) {
+    console.error('[ELI] CSS minification error:', error);
+    return css; // Return original CSS if minification fails
+  }
+}
+
 // Save minified script to disk
 async function saveMinifiedScript(projectName, variantName, minifiedCode, silent = false) {
   try {
@@ -357,6 +389,22 @@ async function saveMinifiedScript(projectName, variantName, minifiedCode, silent
     return minifiedPath;
   } catch (error) {
     console.error(`[ELI] Error saving minified script:`, error);
+    throw error;
+  }
+}
+
+// Save minified CSS to disk
+function saveMinifiedCss(projectName, variantName, minifiedCss, silent = false) {
+  try {
+    const variantPath = path.join(PROJECTS_DIR, projectName, variantName);
+    const minifiedPath = path.join(variantPath, `${variantName}.min.css`);
+    fs.writeFileSync(minifiedPath, minifiedCss, 'utf8');
+    if (!silent) {
+      console.log(`[ELI] Saved minified CSS: ${projectName}/${variantName}.min.css`);
+    }
+    return minifiedPath;
+  } catch (error) {
+    console.error(`[ELI] Error saving minified CSS:`, error);
     throw error;
   }
 }
@@ -541,51 +589,124 @@ const server = http.createServer((req, res) => {
 
 // Auto-minify on file save
 async function autoMinifyOnSave(filePath) {
-  // Only process files in variant folders or shared.js at project root
-  const relativePath = path.relative(PROJECTS_DIR, filePath);
-  const pathParts = relativePath.split(path.sep);
-  
-  // Check if it's a shared.js at project root
-  if (pathParts.length === 2 && pathParts[1] === 'shared.js') {
-    const projectName = pathParts[0];
-    // Minify all variants in this project
-    const variants = getProjectVariants(projectName);
-    for (const variantName of variants) {
-      await minifyVariant(projectName, variantName);
-    }
-    return;
-  }
-  
-  // Check if it's in a variant folder (project/variant/file)
-  if (pathParts.length === 3) {
-    const projectName = pathParts[0];
-    const variantName = pathParts[1];
-    const fileName = pathParts[2];
+  try {
+    // Normalize paths to handle absolute/relative paths correctly
+    const normalizedFilePath = path.normalize(filePath);
+    const normalizedProjectsDir = path.normalize(PROJECTS_DIR);
     
-    // Only process if it's a relevant file type
-    if (fileName.endsWith('.js') || fileName.endsWith('.html') || fileName.endsWith('.scss')) {
+    // Only process files in variant folders or shared.js at project root
+    const relativePath = path.relative(normalizedProjectsDir, normalizedFilePath);
+    
+    // Skip if file is outside PROJECTS_DIR (path.relative returns path starting with ..)
+    if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+      return;
+    }
+    
+    const pathParts = relativePath.split(path.sep).filter(part => part.length > 0);
+    
+    // Check if it's a shared.js at project root
+    if (pathParts.length === 2 && pathParts[1] === 'shared.js') {
+      const projectName = pathParts[0];
+      // Minify all variants in this project
+      const variants = getProjectVariants(projectName);
+      for (const variantName of variants) {
+        await minifyVariant(projectName, variantName);
+      }
+      return;
+    }
+    
+    // Check if it's in a variant folder (project/variant/file)
+    if (pathParts.length === 3) {
+      const projectName = pathParts[0];
+      const variantName = pathParts[1];
+      const fileName = pathParts[2];
+      
+      // Only process if it's a relevant file type (js, html, css, scss)
       // Skip if it's already a minified file
-      if (fileName.endsWith('.min.js')) {
+      if (fileName.endsWith('.min.js') || fileName.endsWith('.min.css')) {
         return;
       }
       
-      await minifyVariant(projectName, variantName);
+      if (fileName.endsWith('.js') || fileName.endsWith('.html') || fileName.endsWith('.css') || fileName.endsWith('.scss')) {
+        console.log(`[ELI] File changed: ${filePath} - triggering minification for ${projectName}/${variantName}`);
+        await minifyVariant(projectName, variantName, false); // Set silent to false to see errors
+      }
     }
+  } catch (error) {
+    console.error(`[ELI] Error in autoMinifyOnSave for ${filePath}:`, error);
   }
 }
 
 // Minify a specific variant
 async function minifyVariant(projectName, variantName, silent = true) {
   try {
+    const variantPath = path.join(PROJECTS_DIR, projectName, variantName);
+    
+    // Minify JavaScript
     const scriptData = getVariantScript(projectName, variantName);
     if (scriptData && scriptData.content) {
       const minifiedCode = await minifyScript(scriptData.content);
       await saveMinifiedScript(projectName, variantName, minifiedCode, silent);
+      if (!silent) {
+        console.log(`[ELI] Successfully minified JS for ${projectName}/${variantName}`);
+      }
+    } else {
+      if (!silent) {
+        console.warn(`[ELI] No script data found for ${projectName}/${variantName}`);
+      }
     }
+    
+    // Minify CSS files
+    try {
+      const entries = fs.readdirSync(variantPath, { withFileTypes: true });
+      const cssFiles = entries
+        .filter(entry => entry.isFile() && (entry.name.endsWith('.css') || entry.name.endsWith('.scss')))
+        .map(entry => entry.name)
+        .filter(name => !name.endsWith('.min.css')); // Skip already minified files
+      
+      for (const cssFile of cssFiles) {
+        const cssPath = path.join(variantPath, cssFile);
+        let cssContent = '';
+        
+        if (cssFile.endsWith('.scss')) {
+          // Compile SCSS to CSS first
+          try {
+            const result = sass.compile(cssPath, {
+              style: 'expanded',
+              sourceMap: false
+            });
+            cssContent = result.css;
+          } catch (error) {
+            console.error(`[ELI] Error compiling SCSS ${cssFile}:`, error);
+            continue;
+          }
+        } else {
+          // Read CSS file directly
+          cssContent = fs.readFileSync(cssPath, 'utf8');
+        }
+        
+        // Minify the CSS
+        const minifiedCss = minifyCss(cssContent);
+        
+        // Save with the same base name but with .min.css extension
+        const baseName = cssFile.replace(/\.(css|scss)$/, '');
+        const minifiedPath = path.join(variantPath, `${baseName}.min.css`);
+        fs.writeFileSync(minifiedPath, minifiedCss, 'utf8');
+        if (!silent) {
+          console.log(`[ELI] Saved minified CSS: ${projectName}/${variantName}/${baseName}.min.css`);
+        }
+      }
+    } catch (error) {
+      if (!silent) {
+        console.error(`[ELI] Error minifying CSS for ${projectName}/${variantName}:`, error);
+      }
+    }
+    
   } catch (error) {
-    // Silently fail for auto-minification (don't spam console)
+    // Log errors when not silent
     if (!silent) {
-      console.error(`[ELI] Auto-minify failed for ${projectName}/${variantName}:`, error.message);
+      console.error(`[ELI] Auto-minify failed for ${projectName}/${variantName}:`, error);
+      console.error(error.stack);
     }
   }
 }
@@ -600,12 +721,18 @@ function setupFileWatcher() {
 
   // Watch for file changes
   watcher.on('change', (filePath) => {
-    autoMinifyOnSave(filePath);
+    // Add a small delay to ensure file is fully written to disk
+    setTimeout(() => {
+      autoMinifyOnSave(filePath);
+    }, 100);
   });
 
   // Watch for new files
   watcher.on('add', (filePath) => {
-    autoMinifyOnSave(filePath);
+    // Add a small delay to ensure file is fully written to disk
+    setTimeout(() => {
+      autoMinifyOnSave(filePath);
+    }, 100);
   });
 
   console.log('[ELI] File watcher active - minified files will be auto-generated on save');

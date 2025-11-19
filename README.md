@@ -10,6 +10,8 @@ A local development interface for creating and testing web experiments. This too
 - 🔄 **Hot reloading**: Changes to your scripts are reflected immediately when you reload the page
 - 🎯 **Easy injection**: Select a project and variant from the extension popup and inject it into any page
 - ⚡ **Auto-inject**: Optionally auto-inject your selected variant on every page load
+- 🗜️ **Auto-minification**: Minified files are automatically generated whenever you save your code
+- 🛠️ **Built-in utils**: Optimizely-style utility functions available via `@eli/utils`
 - 👥 **Team-friendly**: Simple setup that works for everyone on your team
 
 ## Setup
@@ -22,7 +24,10 @@ This project requires Node.js (v12 or higher). Install dependencies with:
 npm install
 ```
 
-This will install the `sass` package for SCSS compilation.
+This will install the required packages:
+- `sass` - For SCSS compilation
+- `terser` - For JavaScript minification
+- `chokidar` - For file watching and auto-minification
 
 ### 2. Start the Development Server
 
@@ -103,13 +108,14 @@ The server will start on `http://localhost:8000` and serve your project scripts.
 2. Click the extension icon in your Chrome toolbar
 3. Select your project from the "Select Project" dropdown
 4. Select a variant from the "Select Variant" dropdown (e.g., v1, v2)
+   - **Note:** Changing the variant will automatically refresh the page
 5. Click "Inject Script"
 6. Your script will be injected into the current page
 
 ### Hot Reloading
 
 1. Make changes to your variant files (JS, HTML, or SCSS)
-2. In the extension popup, click "Reload Current Page" (or just refresh the page manually)
+2. Refresh the page manually (or change the variant in the dropdown to automatically refresh)
 3. The updated script will be injected automatically (if auto-inject is enabled) or you can click "Inject Script" again
 
 ### Auto-Inject
@@ -201,8 +207,8 @@ utils.triggerEvent('experimentLoaded', { variant: 'v1' });
 ```
 
 **Available utils functions:**
-- `waitForElement(selector, timeout)` - Wait for element to appear
-- `waitUntil(condition, interval, timeout)` - Wait until condition is true
+- `waitForElement(selector)` - Wait for element to appear (waits indefinitely)
+- `waitUntil(condition, interval)` - Wait until condition is true (waits indefinitely, checks every `interval` ms, default: 100ms)
 - `getCookie(name)` - Get cookie value
 - `setCookie(name, value, days, path)` - Set cookie
 - `getQueryParam(name, url)` - Get URL query parameter
@@ -229,22 +235,27 @@ eli/
 │   │   ├── v1/
 │   │   │   ├── v1.js
 │   │   │   ├── v1.html
-│   │   │   └── v1.scss
+│   │   │   ├── v1.scss
+│   │   │   └── v1.min.js      # Auto-generated minified file
 │   │   ├── v2/
 │   │   │   ├── v2.js
 │   │   │   ├── v2.html
-│   │   │   └── v2.scss
+│   │   │   ├── v2.scss
+│   │   │   └── v2.min.js      # Auto-generated minified file
 │   │   └── shared.js
 │   └── my-experiment/
 │       ├── v1/
-│       │   └── v1.js
+│       │   ├── v1.js
+│       │   └── v1.min.js      # Auto-generated minified file
 │       └── v2/
-│           └── v2.js
+│           ├── v2.js
+│           └── v2.min.js      # Auto-generated minified file
 ├── background.js          # Extension background service worker
 ├── popup.html            # Extension popup UI
 ├── popup.js              # Extension popup logic
 ├── manifest.json         # Chrome extension manifest
 ├── server.js             # Local development server
+├── utils.js              # Built-in utility functions
 ├── bin/
 │   └── eli               # CLI command script
 ├── package.json          # Node.js project file
@@ -255,6 +266,7 @@ eli/
 - Each project folder contains **variant folders** (e.g., `v1/`, `v2/`)
 - Each variant folder must contain at least one `.js` file
 - HTML (`.html`) and SCSS (`.scss`) files are optional
+- `.min.js` files are automatically generated when you save your code
 - You can have a `shared.js` file at the project root level to share code between variants
 - No config files are required
 
@@ -265,9 +277,7 @@ The development server exposes the following endpoints:
 - `GET /api/projects` - Returns a list of all available projects with their variants
 - `GET /api/project/:projectName/variants` - Returns a list of all variants in a project
 - `GET /api/project/:projectName/:variantName/script.js` - Returns the processed JS file from a variant (with imports processed and cache busting)
-  - Optional query param: `?saveMin=true` - Also saves a minified version to disk
-- `GET /api/project/:projectName/:variantName/script.min.js` - Returns the minified version of the processed JS file
-  - Optional query param: `?save=true` - Saves the minified file to disk as `{variantName}.min.js` in the variant folder
+- `GET /api/project/:projectName/:variantName/script.min.js` - Returns the minified version of the processed JS file (minified files are auto-generated on save)
 - `GET /api/project/:projectName/config` - Returns project configuration (defaults)
 
 ## Minification
@@ -279,6 +289,7 @@ ELI automatically compiles and minifies your variant code whenever you save any 
 **Minified files are automatically generated** when you save:
 - Any `.js` file in a variant folder
 - Any `.html` file in a variant folder
+- Any `.css` file in a variant folder
 - Any `.scss` file in a variant folder
 - `shared.js` at the project root (minifies all variants in that project)
 
@@ -286,14 +297,15 @@ The minified file is saved as `{variantName}.min.js` in the variant folder (e.g.
 
 ### Getting Minified Code
 
-**Option 1: Just save your file!**
-The minified file is automatically created/updated whenever you save any relevant file. Just check the variant folder for the `.min.js` file.
+**The minified file is automatically created/updated** whenever you save any relevant file. Just check the variant folder for the `.min.js` file - it's ready to copy/paste into other tools!
 
-**Option 2: Via API endpoint**
+You can also fetch it via the API endpoint:
 ```bash
-# Get minified code (already saved automatically, but you can fetch it)
+# Get minified code (already saved automatically)
 curl "http://localhost:8000/api/project/example-project/v1/script.min.js"
 ```
+
+**Note:** The file watcher runs automatically when the server starts. You'll see `[ELI] File watcher active - minified files will be auto-generated on save` in the server console.
 
 ### Minification Settings
 
@@ -312,7 +324,8 @@ The minifier is configured to:
 - **Import organization**: Import HTML, SCSS, and JS files to keep your code organized
 - **SCSS compilation**: SCSS files are automatically compiled to CSS and injected
 - **Cache busting**: The server automatically adds cache-busting parameters to ensure you always get the latest version
-- **Minified builds**: Use the minification endpoints to generate production-ready code for other tools
+- **Auto-minification**: Minified files are automatically generated on save - no manual steps needed
+- **File watching**: The server watches for file changes and automatically regenerates minified files
 - **Team collaboration**: Share the project folder via git. Each team member runs their own local server
 - **Debugging**: Use Chrome DevTools console to see logs and debug your experiments
 
@@ -324,8 +337,8 @@ The minifier is configured to:
 
 **Script doesn't update after changes**
 - Make sure you're reloading the page after making changes
-- Check that your JS file is saved
-- Try clicking "Refresh Projects" in the extension popup
+- Check that your JS, HTML, CSS, or SCSS file is saved
+- The minified file will automatically update when you save any project file
 
 **Script doesn't inject**
 - Make sure you've selected both a project and a variant from the dropdowns
@@ -339,6 +352,14 @@ The minifier is configured to:
 - Check that HTML/SCSS/JS files exist at the specified paths
 - For SCSS imports, ensure the `sass` package is installed (`npm install`)
 - Check the server console for detailed error messages about failed imports
+
+**Minified files not being generated**
+- Make sure the development server is running (file watcher only works when server is active)
+- Check the server console for the message: `[ELI] File watcher active - minified files will be auto-generated on save`
+- Verify you're saving files in variant folders (not at the project root, unless it's `shared.js`)
+- Minified files are automatically generated when you save any `.js`, `.html`, `.css`, or `.scss` file in a variant folder
+- Check the variant folder for `.min.js` files after saving - they should appear automatically
+- Look for console messages like `[ELI] File changed: ... - triggering minification` to verify the file watcher is working
 
 ## License
 

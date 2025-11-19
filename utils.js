@@ -5,11 +5,10 @@ export default {
   /**
    * Wait for an element to appear in the DOM
    * @param {string|Element} selector - CSS selector or element
-   * @param {number} timeout - Maximum time to wait in milliseconds (default: 3000)
-   * @returns {Promise<Element>} Promise that resolves with the element
+   * @returns {Promise<Element>} Promise that resolves with the element (waits indefinitely)
    */
-  waitForElement: function(selector, timeout = 3000) {
-    return new Promise((resolve, reject) => {
+  waitForElement: function(selector) {
+    return new Promise((resolve) => {
       // If selector is already an element, return it immediately
       if (selector instanceof Element) {
         resolve(selector);
@@ -36,12 +35,6 @@ export default {
         childList: true,
         subtree: true
       });
-
-      // Timeout
-      setTimeout(() => {
-        observer.disconnect();
-        reject(new Error(`Element "${selector}" not found within ${timeout}ms`));
-      }, timeout);
     });
   },
 
