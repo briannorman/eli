@@ -250,7 +250,7 @@ async function injectScript(projectName, variantName) {
           })();
           
           window.__eli_injected.push(Date.now());
-          console.log('[ELI] Script executed successfully in MAIN world');
+          // console.log('[ELI] Script executed successfully in MAIN world');
         } catch (error) {
           console.error('[ELI] Script execution error:', error);
           // Try alternative execution method
