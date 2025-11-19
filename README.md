@@ -265,7 +265,44 @@ The development server exposes the following endpoints:
 - `GET /api/projects` - Returns a list of all available projects with their variants
 - `GET /api/project/:projectName/variants` - Returns a list of all variants in a project
 - `GET /api/project/:projectName/:variantName/script.js` - Returns the processed JS file from a variant (with imports processed and cache busting)
+  - Optional query param: `?saveMin=true` - Also saves a minified version to disk
+- `GET /api/project/:projectName/:variantName/script.min.js` - Returns the minified version of the processed JS file
+  - Optional query param: `?save=true` - Saves the minified file to disk as `{variantName}.min.js` in the variant folder
 - `GET /api/project/:projectName/config` - Returns project configuration (defaults)
+
+## Minification
+
+ELI automatically compiles and minifies your variant code whenever you save any file in your project. The minified code includes all processed imports (HTML, SCSS, JS) and is ready to use.
+
+### Automatic Minification
+
+**Minified files are automatically generated** when you save:
+- Any `.js` file in a variant folder
+- Any `.html` file in a variant folder
+- Any `.scss` file in a variant folder
+- `shared.js` at the project root (minifies all variants in that project)
+
+The minified file is saved as `{variantName}.min.js` in the variant folder (e.g., `projects/example-project/v1/v1.min.js`).
+
+### Getting Minified Code
+
+**Option 1: Just save your file!**
+The minified file is automatically created/updated whenever you save any relevant file. Just check the variant folder for the `.min.js` file.
+
+**Option 2: Via API endpoint**
+```bash
+# Get minified code (already saved automatically, but you can fetch it)
+curl "http://localhost:8000/api/project/example-project/v1/script.min.js"
+```
+
+### Minification Settings
+
+The minifier is configured to:
+- Keep `console.log` statements (useful for debugging)
+- Remove comments
+- Remove debugger statements
+- Preserve variable and function names (no mangling)
+- Compress whitespace and optimize code structure
 
 ## Tips
 
@@ -275,6 +312,7 @@ The development server exposes the following endpoints:
 - **Import organization**: Import HTML, SCSS, and JS files to keep your code organized
 - **SCSS compilation**: SCSS files are automatically compiled to CSS and injected
 - **Cache busting**: The server automatically adds cache-busting parameters to ensure you always get the latest version
+- **Minified builds**: Use the minification endpoints to generate production-ready code for other tools
 - **Team collaboration**: Share the project folder via git. Each team member runs their own local server
 - **Debugging**: Use Chrome DevTools console to see logs and debug your experiments
 

@@ -3,6 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const { exec } = require('child_process');
 const sass = require('sass');
+const { minify } = require('terser');
+const chokidar = require('chokidar');
 
 const PORT = 8000;
 const PROJECTS_DIR = path.join(__dirname, 'projects');
@@ -317,6 +319,45 @@ function getVariantScript(projectName, variantName) {
   return null;
 }
 
+// Minify JavaScript code
+async function minifyScript(code) {
+  try {
+    const result = await minify(code, {
+      compress: {
+        drop_console: false, // Keep console.log statements
+        drop_debugger: true,
+        pure_funcs: [], // Don't remove any functions
+      },
+      mangle: {
+        reserved: [], // Don't mangle any names
+      },
+      format: {
+        comments: false, // Remove comments
+      },
+    });
+    return result.code || code; // Fallback to original if minification fails
+  } catch (error) {
+    console.error(`[ELI] Minification error:`, error);
+    return code; // Return original code if minification fails
+  }
+}
+
+// Save minified script to disk
+async function saveMinifiedScript(projectName, variantName, minifiedCode, silent = false) {
+  try {
+    const variantPath = path.join(PROJECTS_DIR, projectName, variantName);
+    const minifiedPath = path.join(variantPath, `${variantName}.min.js`);
+    fs.writeFileSync(minifiedPath, minifiedCode, 'utf8');
+    if (!silent) {
+      console.log(`[ELI] Saved minified script: ${projectName}/${variantName}.min.js`);
+    }
+    return minifiedPath;
+  } catch (error) {
+    console.error(`[ELI] Error saving minified script:`, error);
+    throw error;
+  }
+}
+
 // Check if URL matches any pattern
 function urlMatchesPattern(url, pattern) {
   // Convert pattern to regex
@@ -390,12 +431,13 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Get variant script endpoint
-  // Format: /api/project/:projectName/:variantName/script.js
-  const variantMatch = req.url.match(/^\/api\/project\/([^\/]+)\/([^\/]+)\/script\.js(\?v=(\d+))?$/);
-  if (variantMatch && req.method === 'GET') {
-    const projectName = variantMatch[1];
-    const variantName = variantMatch[2];
+  // Get minified variant script endpoint (check before regular script endpoint)
+  // Format: /api/project/:projectName/:variantName/script.min.js?save=true (optional save param)
+  const minifiedMatch = req.url.match(/^\/api\/project\/([^\/]+)\/([^\/]+)\/script\.min\.js(\?save=(true|false))?$/);
+  if (minifiedMatch && req.method === 'GET') {
+    const projectName = minifiedMatch[1];
+    const variantName = minifiedMatch[2];
+    const shouldSave = minifiedMatch[3] === '?save=true';
     
     // Security: ensure variant name doesn't contain path traversal
     if (variantName.includes('..') || variantName.includes('/') || variantName.includes('\\')) {
@@ -404,29 +446,88 @@ const server = http.createServer((req, res) => {
       return;
     }
     
-    try {
-      const scriptData = getVariantScript(projectName, variantName);
-      
-      if (scriptData && scriptData.content) {
-        // Add cache busting timestamp
-        res.writeHead(200, {
-          ...corsHeaders,
-          'Content-Type': 'application/javascript',
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0'
-        });
-        res.end(scriptData.content);
-      } else {
-        console.error(`[ELI] Failed to get script for ${projectName}/${variantName}`);
-        res.writeHead(404, corsHeaders);
-        res.end(`Variant ${variantName} not found in project ${projectName} or no JS file found`);
+    (async () => {
+      try {
+        const scriptData = getVariantScript(projectName, variantName);
+        
+        if (scriptData && scriptData.content) {
+          // Minify the script
+          const minifiedCode = await minifyScript(scriptData.content);
+          
+          // Save to disk if requested
+          if (shouldSave) {
+            await saveMinifiedScript(projectName, variantName, minifiedCode);
+          }
+          
+          res.writeHead(200, {
+            ...corsHeaders,
+            'Content-Type': 'application/javascript',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          });
+          res.end(minifiedCode);
+        } else {
+          console.error(`[ELI] Failed to get script for ${projectName}/${variantName}`);
+          res.writeHead(404, corsHeaders);
+          res.end(`Variant ${variantName} not found in project ${projectName} or no JS file found`);
+        }
+      } catch (error) {
+        console.error(`[ELI] Error serving minified variant script:`, error);
+        res.writeHead(500, corsHeaders);
+        res.end(`Error: ${error.message}`);
       }
-    } catch (error) {
-      console.error(`[ELI] Error serving variant script:`, error);
-      res.writeHead(500, corsHeaders);
-      res.end(`Error: ${error.message}`);
+    })();
+    return;
+  }
+
+  // Get variant script endpoint
+  // Format: /api/project/:projectName/:variantName/script.js?saveMin=true (optional saveMin param)
+  const variantMatch = req.url.match(/^\/api\/project\/([^\/]+)\/([^\/]+)\/script\.js(\?.*)?$/);
+  if (variantMatch && req.method === 'GET') {
+    const projectName = variantMatch[1];
+    const variantName = variantMatch[2];
+    const queryString = variantMatch[3] || '';
+    const shouldSaveMin = queryString.includes('saveMin=true');
+    
+    // Security: ensure variant name doesn't contain path traversal
+    if (variantName.includes('..') || variantName.includes('/') || variantName.includes('\\')) {
+      res.writeHead(400, corsHeaders);
+      res.end('Invalid variant name');
+      return;
     }
+    
+    (async () => {
+      try {
+        const scriptData = getVariantScript(projectName, variantName);
+        
+        if (scriptData && scriptData.content) {
+          // Optionally save minified version when regular script is requested
+          if (shouldSaveMin) {
+            const minifiedCode = await minifyScript(scriptData.content);
+            await saveMinifiedScript(projectName, variantName, minifiedCode);
+          }
+          
+          // Add cache busting timestamp
+          res.writeHead(200, {
+            ...corsHeaders,
+            'Content-Type': 'application/javascript',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          });
+          res.end(scriptData.content);
+        } else {
+          console.error(`[ELI] Failed to get script for ${projectName}/${variantName}`);
+          res.writeHead(404, corsHeaders);
+          res.end(`Variant ${variantName} not found in project ${projectName} or no JS file found`);
+        }
+      } catch (error) {
+        console.error(`[ELI] Error serving variant script:`, error);
+        res.writeHead(500, corsHeaders);
+        res.end(`Error: ${error.message}`);
+      }
+    })();
     return;
   }
 
@@ -435,10 +536,85 @@ const server = http.createServer((req, res) => {
   res.end('Not found');
 });
 
+// Auto-minify on file save
+async function autoMinifyOnSave(filePath) {
+  // Only process files in variant folders or shared.js at project root
+  const relativePath = path.relative(PROJECTS_DIR, filePath);
+  const pathParts = relativePath.split(path.sep);
+  
+  // Check if it's a shared.js at project root
+  if (pathParts.length === 2 && pathParts[1] === 'shared.js') {
+    const projectName = pathParts[0];
+    // Minify all variants in this project
+    const variants = getProjectVariants(projectName);
+    for (const variantName of variants) {
+      await minifyVariant(projectName, variantName);
+    }
+    return;
+  }
+  
+  // Check if it's in a variant folder (project/variant/file)
+  if (pathParts.length === 3) {
+    const projectName = pathParts[0];
+    const variantName = pathParts[1];
+    const fileName = pathParts[2];
+    
+    // Only process if it's a relevant file type
+    if (fileName.endsWith('.js') || fileName.endsWith('.html') || fileName.endsWith('.scss')) {
+      // Skip if it's already a minified file
+      if (fileName.endsWith('.min.js')) {
+        return;
+      }
+      
+      await minifyVariant(projectName, variantName);
+    }
+  }
+}
+
+// Minify a specific variant
+async function minifyVariant(projectName, variantName, silent = true) {
+  try {
+    const scriptData = getVariantScript(projectName, variantName);
+    if (scriptData && scriptData.content) {
+      const minifiedCode = await minifyScript(scriptData.content);
+      await saveMinifiedScript(projectName, variantName, minifiedCode, silent);
+    }
+  } catch (error) {
+    // Silently fail for auto-minification (don't spam console)
+    if (!silent) {
+      console.error(`[ELI] Auto-minify failed for ${projectName}/${variantName}:`, error.message);
+    }
+  }
+}
+
+// Set up file watcher for auto-minification
+function setupFileWatcher() {
+  const watcher = chokidar.watch(PROJECTS_DIR, {
+    ignored: /(^|[\/\\])\../, // ignore dotfiles
+    persistent: true,
+    ignoreInitial: true, // Don't process existing files on startup
+  });
+
+  // Watch for file changes
+  watcher.on('change', (filePath) => {
+    autoMinifyOnSave(filePath);
+  });
+
+  // Watch for new files
+  watcher.on('add', (filePath) => {
+    autoMinifyOnSave(filePath);
+  });
+
+  console.log('[ELI] File watcher active - minified files will be auto-generated on save');
+}
+
 server.listen(PORT, () => {
   console.log(`Development server running on http://localhost:${PORT}`);
   console.log(`Projects directory: ${PROJECTS_DIR}`);
   console.log(`\nAvailable projects: ${getProjects().join(', ') || 'none'}`);
   console.log('\nServer ready! Make changes to your project scripts and reload the page.');
+  
+  // Start file watcher for auto-minification
+  setupFileWatcher();
 });
 
