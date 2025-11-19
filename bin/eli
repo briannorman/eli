@@ -147,31 +147,78 @@ function processScssImports(jsContent, variantPath) {
 }
 
 // Process JS imports in JS code
-function processJsImports(jsContent, variantPath, projectPath) {
-  // Match: import variableName from './filename.js' or '../filename.js'
-  const importRegex = /import\s+(\w+)\s+from\s+['"]([^'"]+\.js)['"];?/g;
+function processJsImports(jsContent, variantPath, projectPath, processingUtils = false) {
+  // Match: import variableName from './filename.js' or '../filename.js' or '@eli/utils'
+  const importRegex = /import\s+(\w+)\s+from\s+['"]([^'"]+)['"];?/g;
   
   let processedContent = jsContent;
   let match;
   const originalContent = jsContent; // Store original for regex reset
   
   while ((match = importRegex.exec(originalContent)) !== null) {
-    const [fullMatch, varName, jsFilePath] = match;
+    const [fullMatch, varName, importPath] = match;
+    
+    // Handle special @eli/utils import
+    if (importPath === '@eli/utils' || importPath === '@eli/utils.js') {
+      // Prevent infinite recursion - if we're already processing utils, skip
+      if (processingUtils) {
+        console.warn(`[ELI] Skipping recursive @eli/utils import`);
+        processedContent = processedContent.replace(fullMatch, `const ${varName} = {};`);
+        continue;
+      }
+      
+      const utilsPath = path.join(PROJECT_ROOT, 'utils.js');
+      try {
+        if (fs.existsSync(utilsPath)) {
+          let utilsContent = fs.readFileSync(utilsPath, 'utf8');
+          // Process any imports in utils.js (though it shouldn't have any)
+          // Pass processingUtils=true to prevent infinite recursion
+          const utilsDir = path.dirname(utilsPath);
+          utilsContent = processHtmlImports(utilsContent, utilsDir);
+          utilsContent = processScssImports(utilsContent, utilsDir);
+          utilsContent = processJsImports(utilsContent, utilsDir, projectPath, true);
+          
+          // Check for export default (handle multiline - match everything after "export default" to end of file)
+          const exportDefaultMatch = utilsContent.match(/export\s+default\s+([\s\S]*)$/);
+          if (exportDefaultMatch) {
+            const exportedValue = exportDefaultMatch[1].trim();
+            // Remove trailing semicolon if present
+            const cleanValue = exportedValue.replace(/;?\s*$/, '');
+            processedContent = processedContent.replace(fullMatch, `const ${varName} = ${cleanValue};`);
+            console.log(`[ELI] Processed @eli/utils import -> ${varName}`);
+          } else {
+            processedContent = processedContent.replace(fullMatch, `const ${varName} = {};`);
+          }
+        } else {
+          console.warn(`[ELI] Utils file not found: ${utilsPath}`);
+          processedContent = processedContent.replace(fullMatch, `const ${varName} = {};`);
+        }
+      } catch (error) {
+        console.error(`[ELI] Error processing @eli/utils import:`, error);
+        processedContent = processedContent.replace(fullMatch, `const ${varName} = {};`);
+      }
+      continue;
+    }
+    
+    // Skip if not a .js file (might be HTML or SCSS)
+    if (!importPath.endsWith('.js') && !importPath.startsWith('./') && !importPath.startsWith('../')) {
+      continue;
+    }
     
     // Resolve the path relative to the variant folder
     let jsPath;
-    if (jsFilePath.startsWith('./') || jsFilePath.startsWith('../')) {
+    if (importPath.startsWith('./') || importPath.startsWith('../')) {
       // Relative path - resolve from variant folder
-      jsPath = path.resolve(variantPath, jsFilePath);
+      jsPath = path.resolve(variantPath, importPath);
     } else {
       // Absolute path from project root
-      jsPath = path.join(projectPath, jsFilePath);
+      jsPath = path.join(projectPath, importPath);
     }
     
     // Security: ensure the resolved path is within the project directory
     const normalizedPath = path.normalize(jsPath);
     if (!normalizedPath.startsWith(projectPath)) {
-      console.warn(`[ELI] JS import path outside project: ${jsFilePath}`);
+      console.warn(`[ELI] JS import path outside project: ${importPath}`);
       processedContent = processedContent.replace(fullMatch, '');
       continue;
     }
@@ -186,14 +233,16 @@ function processJsImports(jsContent, variantPath, projectPath) {
         jsFileContent = processScssImports(jsFileContent, importedFileDir);
         jsFileContent = processJsImports(jsFileContent, importedFileDir, projectPath);
         
-        // Check if the file exports a default value
-        const exportDefaultMatch = jsFileContent.match(/export\s+default\s+(.+);?\s*$/);
+        // Check if the file exports a default value (handle multiline)
+        const exportDefaultMatch = jsFileContent.match(/export\s+default\s+([\s\S]*)$/);
         
         let replacement;
         if (exportDefaultMatch) {
           // File exports a value - use it
           const exportedValue = exportDefaultMatch[1].trim();
-          replacement = `const ${varName} = ${exportedValue};`;
+          // Remove trailing semicolon if present
+          const cleanValue = exportedValue.replace(/;?\s*$/, '');
+          replacement = `const ${varName} = ${cleanValue};`;
         } else {
           // File doesn't export - wrap code in a function
           // This allows the imported code to be called as a function
@@ -201,14 +250,14 @@ function processJsImports(jsContent, variantPath, projectPath) {
         }
         
         processedContent = processedContent.replace(fullMatch, replacement);
-        console.log(`[ELI] Processed JS import: ${jsFilePath} -> ${varName}`);
+        console.log(`[ELI] Processed JS import: ${jsPath} -> ${varName}`);
       } else {
         console.warn(`[ELI] JS file not found: ${jsPath}`);
         // Replace with undefined variable if file not found
         processedContent = processedContent.replace(fullMatch, `const ${varName} = undefined;`);
       }
     } catch (error) {
-      console.error(`[ELI] Error processing JS import ${jsFilePath}:`, error);
+      console.error(`[ELI] Error processing JS import ${jsPath}:`, error);
       processedContent = processedContent.replace(fullMatch, `const ${varName} = undefined;`);
     }
   }
@@ -234,21 +283,39 @@ function getVariantScript(projectName, variantName) {
       let content = fs.readFileSync(scriptPath, 'utf8');
       
       // Process HTML imports
-      content = processHtmlImports(content, variantPath);
+      try {
+        content = processHtmlImports(content, variantPath);
+      } catch (error) {
+        console.error(`[ELI] Error processing HTML imports:`, error);
+        throw error;
+      }
       
       // Process SCSS imports
-      content = processScssImports(content, variantPath);
+      try {
+        content = processScssImports(content, variantPath);
+      } catch (error) {
+        console.error(`[ELI] Error processing SCSS imports:`, error);
+        throw error;
+      }
       
       // Process JS imports (must be last to handle nested imports)
-      content = processJsImports(content, variantPath, projectPath);
+      try {
+        content = processJsImports(content, variantPath, projectPath);
+      } catch (error) {
+        console.error(`[ELI] Error processing JS imports:`, error);
+        throw error;
+      }
       
       return {
         filename: preferredFile,
         content: content
       };
+    } else {
+      console.warn(`[ELI] No JS files found in variant ${variantName} for project ${projectName}`);
     }
   } catch (error) {
-    console.error(`Error reading variant ${variantName} for ${projectName}:`, error);
+    console.error(`[ELI] Error reading variant ${variantName} for ${projectName}:`, error);
+    throw error; // Re-throw to see the error in the endpoint handler
   }
   return null;
 }
@@ -340,21 +407,28 @@ const server = http.createServer((req, res) => {
       return;
     }
     
-    const scriptData = getVariantScript(projectName, variantName);
-    
-    if (scriptData && scriptData.content) {
-      // Add cache busting timestamp
-      res.writeHead(200, {
-        ...corsHeaders,
-        'Content-Type': 'application/javascript',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0'
-      });
-      res.end(scriptData.content);
-    } else {
-      res.writeHead(404, corsHeaders);
-      res.end(`Variant ${variantName} not found in project ${projectName} or no JS file found`);
+    try {
+      const scriptData = getVariantScript(projectName, variantName);
+      
+      if (scriptData && scriptData.content) {
+        // Add cache busting timestamp
+        res.writeHead(200, {
+          ...corsHeaders,
+          'Content-Type': 'application/javascript',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        });
+        res.end(scriptData.content);
+      } else {
+        console.error(`[ELI] Failed to get script for ${projectName}/${variantName}`);
+        res.writeHead(404, corsHeaders);
+        res.end(`Variant ${variantName} not found in project ${projectName} or no JS file found`);
+      }
+    } catch (error) {
+      console.error(`[ELI] Error serving variant script:`, error);
+      res.writeHead(500, corsHeaders);
+      res.end(`Error: ${error.message}`);
     }
     return;
   }

@@ -231,10 +231,11 @@ async function injectScript(projectName, variantName) {
     
     const scriptText = await response.text();
     
-    // Inject the script directly in MAIN world to bypass CSP completely
+    // Inject the script using data URL to bypass CSP restrictions
+    // Data URLs are often allowed by CSP when blob URLs are not
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      world: 'MAIN', // Execute in main world - this bypasses CSP restrictions
+      world: 'MAIN', // Execute in main world
       func: (code) => {
         try {
           // Mark that we've injected (store in window for tracking)
@@ -242,25 +243,45 @@ async function injectScript(projectName, variantName) {
             window.__eli_injected = [];
           }
           
-          // Execute the code directly - this works in MAIN world and bypasses CSP
-          // Wrap in IIFE to avoid polluting global scope
-          (function() {
-            'use strict';
-            eval(code);
-          })();
+          // Try data URL first (base64 encoded)
+          // This often works better than blob URLs with strict CSP
+          const base64Code = btoa(unescape(encodeURIComponent(code)));
+          const dataUrl = `data:text/javascript;base64,${base64Code}`;
           
-          window.__eli_injected.push(Date.now());
-          // console.log('[ELI] Script executed successfully in MAIN world');
+          // Create and inject script element with data URL
+          const script = document.createElement('script');
+          script.src = dataUrl;
+          script.onload = () => {
+            window.__eli_injected.push(Date.now());
+          };
+          script.onerror = (error) => {
+            console.error('[ELI] Data URL script loading failed, trying blob URL:', error);
+            
+            // Fallback to blob URL if data URL fails
+            try {
+              const blob = new Blob([code], { type: 'application/javascript' });
+              const blobUrl = URL.createObjectURL(blob);
+              
+              const blobScript = document.createElement('script');
+              blobScript.src = blobUrl;
+              blobScript.onload = () => {
+                URL.revokeObjectURL(blobUrl);
+                window.__eli_injected.push(Date.now());
+              };
+              blobScript.onerror = (blobError) => {
+                URL.revokeObjectURL(blobUrl);
+                console.error('[ELI] Both data URL and blob URL failed. CSP may be blocking all script injection methods:', blobError);
+              };
+              
+              document.head.appendChild(blobScript);
+            } catch (blobError) {
+              console.error('[ELI] Failed to create blob URL fallback:', blobError);
+            }
+          };
+          
+          document.head.appendChild(script);
         } catch (error) {
-          console.error('[ELI] Script execution error:', error);
-          // Try alternative execution method
-          try {
-            const func = new Function(code);
-            func();
-            console.log('[ELI] Script executed using Function constructor');
-          } catch (fallbackError) {
-            console.error('[ELI] All execution methods failed:', fallbackError);
-          }
+          console.error('[ELI] Script injection error:', error);
         }
       },
       args: [scriptText]

@@ -167,6 +167,59 @@ shared(); // Executes the code in shared.js
 - If a JS file has `export default value;`, the imported variable will contain that value
 - If a JS file has no export, it becomes a callable function that executes the code when called
 
+### Built-in Utils
+
+ELI provides a built-in utils object with Optimizely-style utility functions. Import it using:
+
+```javascript
+import utils from '@eli/utils';
+
+// Wait for an element to appear
+utils.waitForElement('#myElement').then(element => {
+  console.log('Element found:', element);
+});
+
+// Wait until a condition is met
+utils.waitUntil(() => document.readyState === 'complete');
+
+// DOM manipulation
+utils.addClass('#myButton', 'active');
+utils.removeClass('#myButton', 'inactive');
+
+// Event handling
+utils.on('#myButton', 'click', () => console.log('Clicked!'));
+
+// Cookies
+const userId = utils.getCookie('userId');
+utils.setCookie('userId', '12345', 30);
+
+// Query parameters
+const campaign = utils.getQueryParam('campaign');
+
+// Custom events
+utils.triggerEvent('experimentLoaded', { variant: 'v1' });
+```
+
+**Available utils functions:**
+- `waitForElement(selector, timeout)` - Wait for element to appear
+- `waitUntil(condition, interval, timeout)` - Wait until condition is true
+- `getCookie(name)` - Get cookie value
+- `setCookie(name, value, days, path)` - Set cookie
+- `getQueryParam(name, url)` - Get URL query parameter
+- `triggerEvent(eventName, data, target)` - Trigger custom event
+- `select(selector, context)` - Select single element
+- `selectAll(selector, context)` - Select multiple elements
+- `addClass(element, className)` - Add class to element
+- `removeClass(element, className)` - Remove class from element
+- `toggleClass(element, className)` - Toggle class on element
+- `hasClass(element, className)` - Check if element has class
+- `on(element, event, handler)` - Add event listener
+- `off(element, event, handler)` - Remove event listener
+- `delegate(parent, selector, event, handler)` - Event delegation
+- `getViewport()` - Get viewport dimensions
+- `isInViewport(element, threshold)` - Check if element is in viewport
+- `scrollIntoView(element, options)` - Scroll element into view
+
 ## Project Structure
 
 ```
