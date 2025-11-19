@@ -163,6 +163,21 @@ function updateInjectButtonState() {
   injectBtn.disabled = !selectedProject || !selectedVariant;
 }
 
+// Check if URL is injectable (not chrome://, chrome-extension://, about:, etc.)
+function isInjectableUrl(url) {
+  if (!url) return false;
+  try {
+    const urlObj = new URL(url);
+    const protocol = urlObj.protocol.toLowerCase();
+    // Block chrome://, chrome-extension://, about:, moz-extension://, etc.
+    const restrictedProtocols = ['chrome:', 'chrome-extension:', 'about:', 'moz-extension:', 'edge:', 'opera:', 'brave:'];
+    return !restrictedProtocols.includes(protocol);
+  } catch (e) {
+    // If URL parsing fails, assume it's not injectable
+    return false;
+  }
+}
+
 // Inject script into current tab
 async function injectScript(projectName, variantName) {
   try {
@@ -175,6 +190,12 @@ async function injectScript(projectName, variantName) {
     
     if (!tab) {
       showStatus('No active tab found', 'error');
+      return;
+    }
+
+    // Check if the URL is injectable
+    if (!isInjectableUrl(tab.url)) {
+      showStatus('Cannot inject scripts into this page. Chrome://, about://, and extension pages are not supported.', 'error');
       return;
     }
 
@@ -201,59 +222,69 @@ async function injectScript(projectName, variantName) {
     
     // Inject the script using data URL to bypass CSP restrictions
     // Data URLs are often allowed by CSP when blob URLs are not
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      world: 'MAIN', // Execute in main world
-      func: (code) => {
-        try {
-          // Mark that we've injected (store in window for tracking)
-          if (!window.__eli_injected) {
-            window.__eli_injected = [];
-          }
-          
-          // Try data URL first (base64 encoded)
-          // This often works better than blob URLs with strict CSP
-          const base64Code = btoa(unescape(encodeURIComponent(code)));
-          const dataUrl = `data:text/javascript;base64,${base64Code}`;
-          
-          // Create and inject script element with data URL
-          const script = document.createElement('script');
-          script.src = dataUrl;
-          script.onload = () => {
-            window.__eli_injected.push(Date.now());
-          };
-          script.onerror = (error) => {
-            console.error('[ELI] Data URL script loading failed, trying blob URL:', error);
-            
-            // Fallback to blob URL if data URL fails
-            try {
-              const blob = new Blob([code], { type: 'application/javascript' });
-              const blobUrl = URL.createObjectURL(blob);
-              
-              const blobScript = document.createElement('script');
-              blobScript.src = blobUrl;
-              blobScript.onload = () => {
-                URL.revokeObjectURL(blobUrl);
-                window.__eli_injected.push(Date.now());
-              };
-              blobScript.onerror = (blobError) => {
-                URL.revokeObjectURL(blobUrl);
-                console.error('[ELI] Both data URL and blob URL failed. CSP may be blocking all script injection methods:', blobError);
-              };
-              
-              document.head.appendChild(blobScript);
-            } catch (blobError) {
-              console.error('[ELI] Failed to create blob URL fallback:', blobError);
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        world: 'MAIN', // Execute in main world
+        func: (code) => {
+          try {
+            // Mark that we've injected (store in window for tracking)
+            if (!window.__eli_injected) {
+              window.__eli_injected = [];
             }
-          };
-          
-          document.head.appendChild(script);
-        } catch (error) {
-          console.error('[ELI] Script injection error:', error);
-        }
-      },
-      args: [scriptText]
-    });
+            
+            // Try data URL first (base64 encoded)
+            // This often works better than blob URLs with strict CSP
+            const base64Code = btoa(unescape(encodeURIComponent(code)));
+            const dataUrl = `data:text/javascript;base64,${base64Code}`;
+            
+            // Create and inject script element with data URL
+            const script = document.createElement('script');
+            script.src = dataUrl;
+            script.onload = () => {
+              window.__eli_injected.push(Date.now());
+            };
+            script.onerror = (error) => {
+              console.error('[ELI] Data URL script loading failed, trying blob URL:', error);
+              
+              // Fallback to blob URL if data URL fails
+              try {
+                const blob = new Blob([code], { type: 'application/javascript' });
+                const blobUrl = URL.createObjectURL(blob);
+                
+                const blobScript = document.createElement('script');
+                blobScript.src = blobUrl;
+                blobScript.onload = () => {
+                  URL.revokeObjectURL(blobUrl);
+                  window.__eli_injected.push(Date.now());
+                };
+                blobScript.onerror = (blobError) => {
+                  URL.revokeObjectURL(blobUrl);
+                  console.error('[ELI] Both data URL and blob URL failed. CSP may be blocking all script injection methods:', blobError);
+                };
+                
+                document.head.appendChild(blobScript);
+              } catch (blobError) {
+                console.error('[ELI] Failed to create blob URL fallback:', blobError);
+              }
+            };
+            
+            document.head.appendChild(script);
+          } catch (error) {
+            console.error('[ELI] Script injection error:', error);
+          }
+        },
+        args: [scriptText]
+      });
+    } catch (scriptingError) {
+      // Handle Chrome scripting API errors (e.g., chrome:// URLs)
+      if (scriptingError.message && scriptingError.message.includes('chrome://')) {
+        throw new Error('Cannot inject scripts into Chrome internal pages (chrome:// URLs). Please navigate to a regular web page.');
+      } else if (scriptingError.message && scriptingError.message.includes('Cannot access')) {
+        throw new Error('Cannot access this page. Chrome://, about://, and extension pages are not supported.');
+      }
+      throw scriptingError;
+    }
     
     await saveProject(projectName, variantName);
     selectedProject = projectName;
@@ -261,7 +292,12 @@ async function injectScript(projectName, variantName) {
     showStatus(`Injected: ${project?.displayName || projectName} - ${variantName}`, 'success');
   } catch (error) {
     console.error('Injection error:', error);
-    showStatus(`Error: ${error.message}`, 'error');
+    // Provide user-friendly error messages
+    let errorMessage = error.message;
+    if (error.message.includes('chrome://') || error.message.includes('Cannot access')) {
+      errorMessage = 'Cannot inject scripts into this page. Please navigate to a regular web page (http:// or https://).';
+    }
+    showStatus(`Error: ${errorMessage}`, 'error');
   }
 }
 
