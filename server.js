@@ -62,10 +62,30 @@ function processHtmlImports(jsContent, variantPath) {
   let processedContent = jsContent;
   let match;
   const originalContent = jsContent; // Store original for regex reset
+  const declaredVariables = new Set(); // Track already declared variables
+  
+  // First, check for already declared variables in the content (from previous processing)
+  const existingDeclarations = processedContent.match(/const\s+(\w+)\s*=/g);
+  if (existingDeclarations) {
+    existingDeclarations.forEach(decl => {
+      const varMatch = decl.match(/const\s+(\w+)\s*=/);
+      if (varMatch) {
+        declaredVariables.add(varMatch[1]);
+      }
+    });
+  }
   
   while ((match = importRegex.exec(originalContent)) !== null) {
     const [fullMatch, varName, relativePath, htmlFileName] = match;
     const htmlPath = path.join(variantPath, htmlFileName);
+    
+    // Check if this variable has already been declared
+    if (declaredVariables.has(varName)) {
+      // Variable already declared, just remove the duplicate import
+      processedContent = processedContent.replace(fullMatch, '');
+      console.log(`[ELI] Skipped duplicate HTML import: ${htmlFileName} -> ${varName} (already declared)`);
+      continue;
+    }
     
     try {
       if (fs.existsSync(htmlPath)) {
@@ -81,6 +101,7 @@ function processHtmlImports(jsContent, variantPath) {
         // Replace import with const declaration using template literal
         const replacement = `const ${varName} = \`${escapedHtml}\`;`;
         processedContent = processedContent.replace(fullMatch, replacement);
+        declaredVariables.add(varName); // Mark as declared
         console.log(`[ELI] Processed HTML import: ${htmlFileName} -> ${varName}`);
       } else {
         console.warn(`[ELI] HTML file not found: ${htmlPath}`);
@@ -104,10 +125,30 @@ function processScssImports(jsContent, variantPath) {
   let processedContent = jsContent;
   let match;
   const originalContent = jsContent; // Store original for regex reset
+  const declaredVariables = new Set(); // Track already declared variables
+  
+  // First, check for already declared variables in the content (from previous processing)
+  const existingDeclarations = processedContent.match(/const\s+(\w+)\s*=/g);
+  if (existingDeclarations) {
+    existingDeclarations.forEach(decl => {
+      const varMatch = decl.match(/const\s+(\w+)\s*=/);
+      if (varMatch) {
+        declaredVariables.add(varMatch[1]);
+      }
+    });
+  }
   
   while ((match = importRegex.exec(originalContent)) !== null) {
     const [fullMatch, varName, relativePath, scssFileName] = match;
     const scssPath = path.join(variantPath, scssFileName);
+    
+    // Check if this variable has already been declared
+    if (declaredVariables.has(varName)) {
+      // Variable already declared, just remove the duplicate import
+      processedContent = processedContent.replace(fullMatch, '');
+      console.log(`[ELI] Skipped duplicate SCSS import: ${scssFileName} -> ${varName} (already declared)`);
+      continue;
+    }
     
     try {
       if (fs.existsSync(scssPath)) {
@@ -130,6 +171,7 @@ function processScssImports(jsContent, variantPath) {
         // Replace import with code that injects the CSS as a style tag
         const replacement = `const ${varName} = \`${escapedCss}\`; (function() { const style = document.createElement('style'); style.textContent = ${varName}; document.head.appendChild(style); })();`;
         processedContent = processedContent.replace(fullMatch, replacement);
+        declaredVariables.add(varName); // Mark as declared
         console.log(`[ELI] Processed SCSS import: ${scssFileName} -> ${varName} (compiled to CSS)`);
       } else {
         console.warn(`[ELI] SCSS file not found: ${scssPath}`);
