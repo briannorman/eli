@@ -5,3 +5,13 @@ node_modules/
 *.swo
 *~
 
+# Build artifacts
+*.zip
+.package-temp/
+dist/
+build/
+
+# Internal documentation (if any remain)
+*_INTERNAL.md
+*_DEV.md
+
