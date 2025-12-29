@@ -6,12 +6,56 @@ let selectedVariant = null;
 
 // Load saved preferences
 async function loadSavedPreferences() {
-  const result = await chrome.storage.local.get(['selectedProject', 'selectedVariant', 'autoInject']);
+  const result = await chrome.storage.local.get(['selectedProject', 'selectedVariant', 'autoInject', 'projectsDir']);
   return {
     project: result.selectedProject || null,
     variant: result.selectedVariant || null,
-    autoInject: result.autoInject || false
+    autoInject: result.autoInject || false,
+    projectsDir: result.projectsDir || null
   };
+}
+
+// Save projects directory preference
+async function saveProjectsDir(projectsDir) {
+  await chrome.storage.local.set({ projectsDir: projectsDir });
+}
+
+// Fetch current projects directory from server
+async function fetchProjectsDir() {
+  try {
+    const response = await fetch(`${API_BASE}/config/projects-dir`);
+    if (response.ok) {
+      const data = await response.json();
+      return data.projectsDir || null;
+    }
+  } catch (error) {
+    console.error('Failed to fetch projects directory:', error);
+  }
+  return null;
+}
+
+// Set projects directory on server
+async function setProjectsDirOnServer(projectsDir) {
+  try {
+    const response = await fetch(`${API_BASE}/config/projects-dir`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ path: projectsDir })
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      return { success: true, projectsDir: data.projectsDir };
+    } else {
+      const error = await response.json();
+      return { success: false, error: error.error || 'Failed to set projects directory' };
+    }
+  } catch (error) {
+    console.error('Failed to set projects directory:', error);
+    return { success: false, error: error.message || 'Failed to connect to server' };
+  }
 }
 
 // Save project preference
@@ -316,6 +360,73 @@ async function reloadCurrentPage() {
 
 // Initialize popup
 async function init() {
+  // Load and display current projects directory
+  const projectsDirInput = document.getElementById('projectsDirInput');
+  const setProjectsDirBtn = document.getElementById('setProjectsDirBtn');
+  const projectsDirStatus = document.getElementById('projectsDirStatus');
+  
+  // Load saved projects directory preference
+  const prefs = await loadSavedPreferences();
+  if (prefs.projectsDir) {
+    projectsDirInput.value = prefs.projectsDir;
+  }
+  
+  // Fetch current projects directory from server
+  const currentProjectsDir = await fetchProjectsDir();
+  if (currentProjectsDir) {
+    projectsDirInput.value = currentProjectsDir;
+    projectsDirStatus.textContent = `Current: ${currentProjectsDir}`;
+    projectsDirStatus.style.color = '#28a745';
+  } else {
+    projectsDirStatus.textContent = 'Unable to fetch current directory';
+    projectsDirStatus.style.color = '#dc3545';
+  }
+  
+  // Function to set projects directory
+  async function handleSetProjectsDir() {
+    const projectsDir = projectsDirInput.value.trim();
+    if (!projectsDir) {
+      showStatus('Please enter a projects directory path', 'error');
+      return;
+    }
+    
+    setProjectsDirBtn.disabled = true;
+    setProjectsDirBtn.textContent = 'Setting...';
+    projectsDirStatus.textContent = 'Setting directory...';
+    projectsDirStatus.style.color = '#666';
+    
+    const result = await setProjectsDirOnServer(projectsDir);
+    
+    if (result.success) {
+      await saveProjectsDir(result.projectsDir);
+      projectsDirInput.value = result.projectsDir;
+      projectsDirStatus.textContent = `Set to: ${result.projectsDir}`;
+      projectsDirStatus.style.color = '#28a745';
+      showStatus('Projects directory updated successfully', 'success');
+      
+      // Reload projects after directory change
+      projects = await fetchProjects();
+      populateProjects(projects);
+    } else {
+      projectsDirStatus.textContent = `Error: ${result.error}`;
+      projectsDirStatus.style.color = '#dc3545';
+      showStatus(`Failed to set projects directory: ${result.error}`, 'error');
+    }
+    
+    setProjectsDirBtn.disabled = false;
+    setProjectsDirBtn.textContent = 'Set';
+  }
+  
+  // Handle set projects directory button
+  setProjectsDirBtn.addEventListener('click', handleSetProjectsDir);
+  
+  // Handle Enter key in projects directory input
+  projectsDirInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      handleSetProjectsDir();
+    }
+  });
+  
   // Load projects
   projects = await fetchProjects();
   populateProjects(projects);

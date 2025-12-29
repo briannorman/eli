@@ -4,7 +4,7 @@ A local development interface for creating and testing web experiments. This too
 
 ## Features
 
-- 📁 **Project-based organization**: Each experiment lives in its own folder under `projects/`
+- 📁 **Flexible project organization**: Configure your projects directory anywhere on your system - no longer tied to the extension folder
 - 🎨 **Variant system**: Organize experiments with variant folders (v1, v2, etc.) containing JS, HTML, and SCSS files
 - 📦 **Import system**: Import HTML, SCSS, and JS files directly in your code
 - 🔄 **Hot reloading**: Changes to your scripts are reflected immediately when you reload the page
@@ -64,29 +64,46 @@ The server will start on `http://localhost:8000` and serve your project scripts.
 4. Select the `eli` folder (the folder containing this README)
 5. The extension icon should appear in your toolbar
 
-### 4. Create Your First Project
+### 4. Configure Projects Directory
 
-1. Create a new folder in the `projects/` directory:
+The extension is decoupled from the projects folder. You can store your projects anywhere on your system.
+
+**Option A: Set via Extension UI (Recommended)**
+1. Click the extension icon in your Chrome toolbar
+2. In the "Projects Directory" field at the top, enter the full path to your projects folder (e.g., `/Users/username/my-experiments` or `C:\Users\username\my-experiments`)
+3. Click "Set"
+4. The extension will validate the directory and load projects from that location
+
+**Option B: Set via Environment Variable**
+```bash
+PROJECTS_DIR=/path/to/your/projects node bin/eli
+```
+
+**Note:** If no directory is configured, the server defaults to `./projects` (relative to where the server is run) for backward compatibility.
+
+### 5. Create Your First Project
+
+1. Create a new folder in your configured projects directory:
    ```bash
-   mkdir projects/my-experiment
+   mkdir /path/to/your/projects/my-experiment
    ```
 
 2. Create variant folders (e.g., `v1`, `v2`) inside your project:
    ```bash
-   mkdir projects/my-experiment/v1
-   mkdir projects/my-experiment/v2
+   mkdir /path/to/your/projects/my-experiment/v1
+   mkdir /path/to/your/projects/my-experiment/v2
    ```
 
 3. Create a JavaScript file in each variant folder:
    ```bash
-   touch projects/my-experiment/v1/v1.js
-   touch projects/my-experiment/v2/v2.js
+   touch /path/to/your/projects/my-experiment/v1/v1.js
+   touch /path/to/your/projects/my-experiment/v2/v2.js
    ```
 
 4. Optionally add HTML and SCSS files to your variants:
    ```bash
-   touch projects/my-experiment/v1/v1.html
-   touch projects/my-experiment/v1/v1.scss
+   touch /path/to/your/projects/my-experiment/v1/v1.html
+   touch /path/to/your/projects/my-experiment/v1/v1.scss
    ```
 
 5. Add your experiment code to the JS file:
@@ -228,28 +245,10 @@ utils.triggerEvent('experimentLoaded', { variant: 'v1' });
 
 ## Project Structure
 
+### Extension Structure
+
 ```
 eli/
-├── projects/
-│   ├── example-project-one/
-│   │   ├── v1/
-│   │   │   ├── v1.js
-│   │   │   ├── v1.html
-│   │   │   ├── v1.scss
-│   │   │   └── v1.min.js      # Auto-generated minified file
-│   │   ├── v2/
-│   │   │   ├── v2.js
-│   │   │   ├── v2.html
-│   │   │   ├── v2.scss
-│   │   │   └── v2.min.js      # Auto-generated minified file
-│   │   └── shared.js
-│   └── my-experiment/
-│       ├── v1/
-│       │   ├── v1.js
-│       │   └── v1.min.js      # Auto-generated minified file
-│       └── v2/
-│           ├── v2.js
-│           └── v2.min.js      # Auto-generated minified file
 ├── background.js          # Extension background service worker
 ├── popup.html            # Extension popup UI
 ├── popup.js              # Extension popup logic
@@ -262,13 +261,59 @@ eli/
 └── README.md            # This file
 ```
 
-**Project Structure:**
-- Each project folder contains **variant folders** (e.g., `v1/`, `v2/`)
-- Each variant folder must contain at least one `.js` file
-- HTML (`.html`) and SCSS (`.scss`) files are optional
-- `.min.js` files are automatically generated when you save your code
+### Example Projects Directory Structure
+
+Your projects can be stored anywhere on your system. Here's an example structure:
+
+```
+/path/to/your/projects/
+├── example-project/
+│   ├── v1/
+│   │   ├── v1.js              # Main variant script
+│   │   ├── v1.html            # HTML template (optional)
+│   │   ├── v1.scss            # Styles (optional)
+│   │   ├── v1.min.js          # Auto-generated minified file
+│   │   └── v1.min.css         # Auto-generated minified CSS
+│   ├── v2/
+│   │   ├── v2.js
+│   │   ├── v2.html
+│   │   ├── v2.scss
+│   │   ├── v2.min.js          # Auto-generated
+│   │   └── v2.min.css         # Auto-generated
+│   ├── control/
+│   │   └── control.js          # Control variant (minimal example)
+│   └── shared.js               # Shared code for all variants
+│
+├── checkout-experiment/
+│   ├── v1/
+│   │   ├── v1.js
+│   │   ├── components/
+│   │   │   ├── button.js       # Imported JS module
+│   │   │   └── modal.html      # Imported HTML template
+│   │   └── styles/
+│   │       └── checkout.scss   # Imported SCSS
+│   └── v2/
+│       └── v2.js
+│
+└── homepage-banner/
+    ├── variant-a/
+    │   ├── variant-a.js
+    │   ├── banner.html
+    │   └── banner.scss
+    └── variant-b/
+        ├── variant-b.js
+        ├── banner.html
+        └── banner.scss
+```
+
+**Project Structure Rules:**
+- Each project folder contains **variant folders** (e.g., `v1/`, `v2/`, `control/`, `variant-a/`)
+- Each variant folder must contain at least one `.js` file (the main entry point)
+- HTML (`.html`) and SCSS (`.scss`) files are optional and can be imported
+- `.min.js` and `.min.css` files are automatically generated when you save your code
 - You can have a `shared.js` file at the project root level to share code between variants
-- No config files are required
+- You can organize files in subdirectories within variant folders (e.g., `components/`, `styles/`)
+- No config files are required - just organize your files in folders
 
 ## API Endpoints
 
@@ -279,6 +324,8 @@ The development server exposes the following endpoints:
 - `GET /api/project/:projectName/:variantName/script.js` - Returns the processed JS file from a variant (with imports processed and cache busting)
 - `GET /api/project/:projectName/:variantName/script.min.js` - Returns the minified version of the processed JS file (minified files are auto-generated on save)
 - `GET /api/project/:projectName/config` - Returns project configuration (defaults)
+- `GET /api/config/projects-dir` - Returns the current projects directory path
+- `POST /api/config/projects-dir` - Sets a new projects directory path (body: `{ "path": "/path/to/projects" }`)
 
 ## Minification
 
@@ -318,7 +365,8 @@ The minifier is configured to:
 
 ## Tips
 
-- **Multiple projects**: Create as many project folders as you need
+- **Flexible project location**: Store your projects anywhere on your system - configure the path in the extension UI
+- **Multiple projects**: Create as many project folders as you need in your projects directory
 - **Multiple variants**: Each project can have multiple variant folders (v1, v2, test, production, etc.)
 - **Shared code**: Use a `shared.js` file at the project root to share code between variants
 - **Import organization**: Import HTML, SCSS, and JS files to keep your code organized
@@ -326,14 +374,27 @@ The minifier is configured to:
 - **Cache busting**: The server automatically adds cache-busting parameters to ensure you always get the latest version
 - **Auto-minification**: Minified files are automatically generated on save - no manual steps needed
 - **File watching**: The server watches for file changes and automatically regenerates minified files
-- **Team collaboration**: Share the project folder via git. Each team member runs their own local server
+- **Team collaboration**: Share the project folder via git. Each team member runs their own local server and configures their own projects directory path
 - **Debugging**: Use Chrome DevTools console to see logs and debug your experiments
+- **Changing projects directory**: Update the projects directory path in the extension UI - the server will automatically reload projects from the new location
 
 ## Troubleshooting
 
 **Extension shows "Could not connect to server"**
 - Make sure the development server is running (`npm start`)
 - Check that the server is running on port 8000
+
+**No projects showing in dropdown**
+- Verify that you've configured the projects directory path in the extension UI
+- Check that the projects directory path is correct and the directory exists
+- Ensure the projects directory contains at least one project folder
+- Check the server console for any errors when reading the projects directory
+
+**Projects directory not setting**
+- Make sure the path you enter is an absolute path (e.g., `/Users/username/projects` or `C:\Users\username\projects`)
+- Verify that the directory exists and is accessible
+- Check that the directory is actually a folder, not a file
+- Look at the status message in the extension popup for specific error details
 
 **Script doesn't update after changes**
 - Make sure you're reloading the page after making changes
@@ -355,11 +416,12 @@ The minifier is configured to:
 
 **Minified files not being generated**
 - Make sure the development server is running (file watcher only works when server is active)
-- Check the server console for the message: `[ELI] File watcher active - minified files will be auto-generated on save`
+- Check the server console for the message: `[ELI] File watcher active for: /path/to/projects`
 - Verify you're saving files in variant folders (not at the project root, unless it's `shared.js`)
 - Minified files are automatically generated when you save any `.js`, `.html`, `.css`, or `.scss` file in a variant folder
 - Check the variant folder for `.min.js` files after saving - they should appear automatically
 - Look for console messages like `[ELI] File changed: ... - triggering minification` to verify the file watcher is working
+- If the projects directory doesn't exist, the file watcher won't start - set a valid projects directory path first
 
 ## License
 

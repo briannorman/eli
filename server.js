@@ -7,12 +7,17 @@ const { minify } = require('terser');
 const chokidar = require('chokidar');
 
 const PORT = 8000;
-const PROJECTS_DIR = path.join(__dirname, 'projects');
+// Default projects directory (for backward compatibility)
+const DEFAULT_PROJECTS_DIR = path.join(__dirname, 'projects');
+// Configurable projects directory (can be changed via API)
+let PROJECTS_DIR = process.env.PROJECTS_DIR 
+  ? path.resolve(process.env.PROJECTS_DIR)
+  : DEFAULT_PROJECTS_DIR;
 
 // Enable CORS for Chrome extension
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
@@ -431,11 +436,72 @@ function urlMatchesAnyPattern(url, patterns) {
   return patterns.some(pattern => urlMatchesPattern(url, pattern));
 }
 
+// Validate and set projects directory
+function setProjectsDirectory(newPath) {
+  try {
+    const resolvedPath = path.resolve(newPath);
+    
+    // Check if directory exists
+    if (!fs.existsSync(resolvedPath)) {
+      throw new Error('Directory does not exist');
+    }
+    
+    // Check if it's actually a directory
+    const stats = fs.statSync(resolvedPath);
+    if (!stats.isDirectory()) {
+      throw new Error('Path is not a directory');
+    }
+    
+    // Update the projects directory
+    PROJECTS_DIR = resolvedPath;
+    
+    // Restart file watcher with new directory
+    setupFileWatcher();
+    
+    return { success: true, path: PROJECTS_DIR };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
 const server = http.createServer((req, res) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     res.writeHead(200, corsHeaders);
     res.end();
+    return;
+  }
+
+  // Get current projects directory endpoint
+  if (req.url === '/api/config/projects-dir' && req.method === 'GET') {
+    res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ projectsDir: PROJECTS_DIR }));
+    return;
+  }
+
+  // Set projects directory endpoint
+  if (req.url === '/api/config/projects-dir' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk.toString();
+    });
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        const result = setProjectsDirectory(data.path);
+        
+        if (result.success) {
+          res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, projectsDir: result.path }));
+        } else {
+          res.writeHead(400, { ...corsHeaders, 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: result.error }));
+        }
+      } catch (error) {
+        res.writeHead(400, { ...corsHeaders, 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: error.message }));
+      }
+    });
     return;
   }
 
@@ -708,31 +774,55 @@ async function minifyVariant(projectName, variantName, silent = true) {
   }
 }
 
+// File watcher instance (will be created/updated when projects directory is set)
+let fileWatcher = null;
+
 // Set up file watcher for auto-minification
 function setupFileWatcher() {
-  const watcher = chokidar.watch(PROJECTS_DIR, {
-    ignored: /(^|[\/\\])\../, // ignore dotfiles
-    persistent: true,
-    ignoreInitial: true, // Don't process existing files on startup
-  });
+  // Close existing watcher if it exists
+  if (fileWatcher) {
+    fileWatcher.close();
+    fileWatcher = null;
+  }
 
-  // Watch for file changes
-  watcher.on('change', (filePath) => {
-    // Add a small delay to ensure file is fully written to disk
-    setTimeout(() => {
-      autoMinifyOnSave(filePath);
-    }, 100);
-  });
+  // Check if directory exists before setting up watcher
+  if (!fs.existsSync(PROJECTS_DIR)) {
+    console.warn(`[ELI] Projects directory does not exist: ${PROJECTS_DIR}. File watcher not started.`);
+    return;
+  }
 
-  // Watch for new files
-  watcher.on('add', (filePath) => {
-    // Add a small delay to ensure file is fully written to disk
-    setTimeout(() => {
-      autoMinifyOnSave(filePath);
-    }, 100);
-  });
+  try {
+    fileWatcher = chokidar.watch(PROJECTS_DIR, {
+      ignored: /(^|[\/\\])\../, // ignore dotfiles
+      persistent: true,
+      ignoreInitial: true, // Don't process existing files on startup
+    });
 
-  console.log('[ELI] File watcher active - minified files will be auto-generated on save');
+    // Watch for file changes
+    fileWatcher.on('change', (filePath) => {
+      // Add a small delay to ensure file is fully written to disk
+      setTimeout(() => {
+        autoMinifyOnSave(filePath);
+      }, 100);
+    });
+
+    // Watch for new files
+    fileWatcher.on('add', (filePath) => {
+      // Add a small delay to ensure file is fully written to disk
+      setTimeout(() => {
+        autoMinifyOnSave(filePath);
+      }, 100);
+    });
+
+    // Handle watcher errors
+    fileWatcher.on('error', (error) => {
+      console.error(`[ELI] File watcher error:`, error);
+    });
+
+    console.log(`[ELI] File watcher active for: ${PROJECTS_DIR}`);
+  } catch (error) {
+    console.error(`[ELI] Error setting up file watcher:`, error);
+  }
 }
 
 server.listen(PORT, () => {
