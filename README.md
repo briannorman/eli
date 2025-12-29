@@ -274,9 +274,8 @@ eli/
 ├── popup.html            # Extension popup UI
 ├── popup.js              # Extension popup logic
 ├── manifest.json         # Chrome extension manifest
-├── server.js             # Local development server
 ├── bin/
-│   └── eli               # CLI command script
+│   └── eli               # CLI command script (development server)
 ├── package.json          # Node.js project file
 └── README.md            # This file
 ```

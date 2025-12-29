@@ -8,7 +8,8 @@
   },
   "scripts": {
     "start": "node bin/eli",
-    "dev": "node bin/eli"
+    "dev": "node bin/eli",
+    "package": "node scripts/package-extension.js"
   },
   "keywords": [
     "web-experiments",

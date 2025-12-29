@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy - Experimentation Local Interface</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 60px 20px;
+            text-align: center;
+            margin-bottom: 40px;
+        }
+            
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .content {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        h2 {
+            color: #667eea;
+            margin-top: 30px;
+            margin-bottom: 15px;
+            font-size: 1.8em;
+        }
+        
+        h2:first-child {
+            margin-top: 0;
+        }
+        
+        h3 {
+            color: #555;
+            margin-top: 20px;
+            margin-bottom: 10px;
+            font-size: 1.3em;
+        }
+        
+        p {
+            margin-bottom: 15px;
+        }
+        
+        ul {
+            margin-left: 20px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        .link {
+            color: #667eea;
+            text-decoration: none;
+        }
+        
+        .link:hover {
+            text-decoration: underline;
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        .nav {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            margin-right: 20px;
+        }
+        
+        .nav a:hover {
+            text-decoration: underline;
+        }
+        
+        .last-updated {
+            color: #666;
+            font-size: 0.9em;
+            font-style: italic;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Privacy Policy</h1>
+        <p class="subtitle">Experimentation Local Interface (ELI)</p>
+    </header>
+    
+    <div class="container">
+        <nav class="nav">
+            <a href="index.html">Home</a>
+            <a href="privacy-policy.html">Privacy Policy</a>
+            <a href="https://github.com/briannorman/eli">GitHub Repository</a>
+        </nav>
+        
+        <div class="content">
+            <p class="last-updated"><strong>Last Updated:</strong> January 2024</p>
+            
+            <h2>Overview</h2>
+            <p>Experimentation Local Interface (ELI) is a local development tool that helps developers create and test web experiments. This privacy policy explains how the extension handles your data.</p>
+            
+            <h2>Data Collection</h2>
+            <p><strong>ELI does not collect, transmit, or store any personal data or browsing information.</strong></p>
+            
+            <h3>Local Storage Only</h3>
+            <p>The extension uses Chrome's local storage API to store the following preferences locally on your device:</p>
+            <ul>
+                <li>Selected project and variant</li>
+                <li>Auto-inject preference</li>
+                <li>Projects directory path</li>
+            </ul>
+            <p>This data is stored locally in your browser and is never transmitted to any external server or service.</p>
+            
+            <h3>Local Development Server</h3>
+            <p>ELI communicates with a local development server running on <code>http://localhost:8000</code> on your machine. This communication:</p>
+            <ul>
+                <li>Only occurs on your local machine</li>
+                <li>Never transmits data to external servers</li>
+                <li>Is used solely to fetch your local project files</li>
+            </ul>
+            
+            <h2>Permissions</h2>
+            <p>ELI requires the following permissions:</p>
+            <ul>
+                <li><strong><code>scripting</code></strong>: To inject your experiment scripts into web pages for testing</li>
+                <li><strong><code>activeTab</code></strong>: To access the current tab for script injection</li>
+                <li><strong><code>tabs</code></strong>: To reload pages and manage tabs during development</li>
+                <li><strong><code>storage</code></strong>: To save your preferences locally</li>
+                <li><strong><code>&lt;all_urls&gt;</code></strong>: To allow script injection on any website you're testing</li>
+                <li><strong><code>http://localhost:8000/*</code></strong>: To communicate with your local development server</li>
+            </ul>
+            <p>These permissions are required for the extension's core functionality and are not used to collect or transmit any data.</p>
+            
+            <h2>Third-Party Services</h2>
+            <p>ELI does not use any third-party analytics, tracking, or data collection services.</p>
+            
+            <h2>Contact</h2>
+            <p>If you have questions about this privacy policy, please contact us through the extension's <a href="https://github.com/briannorman/eli" class="link">GitHub repository</a>.</p>
+            
+            <h2>Changes to This Policy</h2>
+            <p>We may update this privacy policy from time to time. The "Last Updated" date at the top of this policy will reflect any changes.</p>
+        </div>
+        
+        <div class="footer">
+            <p>© 2024 Experimentation Local Interface | <a href="index.html" class="link">Home</a> | <a href="https://github.com/briannorman/eli" class="link">GitHub</a></p>
+        </div>
+    </div>
+</body>
+</html>
+
