@@ -227,7 +227,7 @@ function processJsImports(jsContent, variantPath, projectPath, processingUtils =
   while ((match = importRegex.exec(originalContent)) !== null) {
     const [fullMatch, varName, importPath] = match;
     
-    // Handle special @eli/utils import (also supports eli-utils npm package)
+    // Handle special @eli/utils import (requires @briannorman9/eli-utils npm package)
     if (importPath === '@eli/utils' || importPath === '@eli/utils.js') {
       // Prevent infinite recursion - if we're already processing utils, skip
       if (processingUtils) {
@@ -236,7 +236,7 @@ function processJsImports(jsContent, variantPath, projectPath, processingUtils =
         continue;
       }
       
-      // Try to resolve from node_modules first (if project has eli-utils installed)
+      // Resolve from node_modules/@briannorman9/eli-utils
       let utilsPath = null;
       let utilsContent = null;
       
@@ -253,14 +253,6 @@ function processJsImports(jsContent, variantPath, projectPath, processingUtils =
           break;
         }
         searchPath = path.dirname(searchPath);
-      }
-      
-      // Fallback to local utils.js file
-      if (!utilsPath) {
-        utilsPath = path.join(__dirname, 'utils.js');
-        if (fs.existsSync(utilsPath)) {
-          console.log(`[ELI] Using local utils.js: ${utilsPath}`);
-        }
       }
       
       try {
