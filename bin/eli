@@ -27,9 +27,35 @@ const corsHeaders = {
 // Get list of projects
 function getProjects() {
   try {
-    const entries = fs.readdirSync(PROJECTS_DIR, { withFileTypes: true });
+    let searchDir = PROJECTS_DIR;
+    
+    // If the configured directory has a 'projects' subfolder, use that instead
+    const projectsSubfolder = path.join(PROJECTS_DIR, 'projects');
+    if (fs.existsSync(projectsSubfolder) && fs.statSync(projectsSubfolder).isDirectory()) {
+      searchDir = projectsSubfolder;
+    }
+    
+    const entries = fs.readdirSync(searchDir, { withFileTypes: true });
+    // Filter out non-project directories and files
+    const excludedNames = ['node_modules', '.git', '.gitignore', '.DS_Store', '.vscode', '.idea', 'package.json', 'package-lock.json', 'README.md', 'LICENSE', 'projects'];
+    
     return entries
-      .filter(entry => entry.isDirectory())
+      // Only include directories (folders), never files
+      .filter(entry => {
+        if (!entry.isDirectory()) {
+          return false; // Skip files
+        }
+        const name = entry.name;
+        // Exclude if in excluded list
+        if (excludedNames.includes(name)) {
+          return false;
+        }
+        // Exclude all hidden directories (starting with .)
+        if (name.startsWith('.')) {
+          return false;
+        }
+        return true;
+      })
       .map(entry => entry.name);
   } catch (error) {
     return [];
@@ -47,9 +73,19 @@ function getProjectConfig(projectName) {
   };
 }
 
+// Get the actual projects directory (handles nested 'projects' folder)
+function getActualProjectsDir() {
+  const projectsSubfolder = path.join(PROJECTS_DIR, 'projects');
+  if (fs.existsSync(projectsSubfolder) && fs.statSync(projectsSubfolder).isDirectory()) {
+    return projectsSubfolder;
+  }
+  return PROJECTS_DIR;
+}
+
 // Get list of variant folders in a project
 function getProjectVariants(projectName) {
-  const projectPath = path.join(PROJECTS_DIR, projectName);
+  const actualProjectsDir = getActualProjectsDir();
+  const projectPath = path.join(actualProjectsDir, projectName);
   try {
     const entries = fs.readdirSync(projectPath, { withFileTypes: true });
     return entries
@@ -68,11 +104,38 @@ function processHtmlImports(jsContent, variantPath) {
   const importRegex = /import\s+(\w+)\s+from\s+['"](\.\/)?([^'"]+\.html)['"];?/g;
   
   let processedContent = jsContent;
-  let match;
+  const matches = [];
   const originalContent = jsContent; // Store original for regex reset
   
+  // Collect all matches first
+  let match;
   while ((match = importRegex.exec(originalContent)) !== null) {
-    const [fullMatch, varName, relativePath, htmlFileName] = match;
+    matches.push(match);
+  }
+  
+  // Process matches in reverse order to maintain string positions when replacing
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const [fullMatch, varName, relativePath, htmlFileName] = matches[i];
+    
+    // Skip if this variable is already declared (prevents duplicate processing)
+    // Check for const, let, or var declarations
+    const varDeclarationRegex = new RegExp(`(?:const|let|var)\\s+${varName}\\s*[=;]`, 'g');
+    if (varDeclarationRegex.test(processedContent)) {
+      // Variable already exists, just remove the import statement
+      processedContent = processedContent.replace(fullMatch, '');
+      console.log(`[ELI] Skipping duplicate HTML import: ${htmlFileName} -> ${varName} (already declared)`);
+      continue;
+    }
+    
+    // Escape the fullMatch for regex replacement
+    const escapedFullMatch = fullMatch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    
+    // Check if this import statement still exists in the content
+    // (it might have been removed by a previous iteration)
+    if (!processedContent.includes(fullMatch)) {
+      continue;
+    }
+    
     const htmlPath = path.join(variantPath, htmlFileName);
     
     try {
@@ -87,7 +150,9 @@ function processHtmlImports(jsContent, variantPath) {
           .replace(/\r/g, '\\r');
         
         // Replace import with const declaration using template literal
+        // Use the original fullMatch for string replacement (not the escaped regex version)
         const replacement = `const ${varName} = \`${escapedHtml}\`;`;
+        // Only replace the first occurrence to avoid duplicates
         processedContent = processedContent.replace(fullMatch, replacement);
         console.log(`[ELI] Processed HTML import: ${htmlFileName} -> ${varName}`);
       } else {
@@ -165,7 +230,7 @@ function processJsImports(jsContent, variantPath, projectPath, processingUtils =
   while ((match = importRegex.exec(originalContent)) !== null) {
     const [fullMatch, varName, importPath] = match;
     
-    // Handle special @eli/utils import
+    // Handle special @eli/utils import (also supports eli-utils npm package)
     if (importPath === '@eli/utils' || importPath === '@eli/utils.js') {
       // Prevent infinite recursion - if we're already processing utils, skip
       if (processingUtils) {
@@ -174,11 +239,37 @@ function processJsImports(jsContent, variantPath, projectPath, processingUtils =
         continue;
       }
       
-      const utilsPath = path.join(PROJECT_ROOT, 'utils.js');
-      try {
+      // Try to resolve from node_modules first (if project has eli-utils installed)
+      let utilsPath = null;
+      let utilsContent = null;
+      
+      // Check for node_modules/@briannorman9/eli-utils in project directory and parent directories
+      let searchPath = projectPath;
+      while (searchPath && searchPath !== path.dirname(searchPath)) {
+        const nodeModulesPath = path.join(searchPath, 'node_modules', '@briannorman9', 'eli-utils');
+        const packageJsonPath = path.join(nodeModulesPath, 'package.json');
+        const indexJsPath = path.join(nodeModulesPath, 'index.js');
+        
+        if (fs.existsSync(packageJsonPath) && fs.existsSync(indexJsPath)) {
+          utilsPath = indexJsPath;
+          console.log(`[ELI] Found @briannorman9/eli-utils in node_modules: ${utilsPath}`);
+          break;
+        }
+        searchPath = path.dirname(searchPath);
+      }
+      
+      // Fallback to local utils.js file
+      if (!utilsPath) {
+        utilsPath = path.join(PROJECT_ROOT, 'utils.js');
         if (fs.existsSync(utilsPath)) {
-          let utilsContent = fs.readFileSync(utilsPath, 'utf8');
-          // Process any imports in utils.js (though it shouldn't have any)
+          console.log(`[ELI] Using local utils.js: ${utilsPath}`);
+        }
+      }
+      
+      try {
+        if (utilsPath && fs.existsSync(utilsPath)) {
+          utilsContent = fs.readFileSync(utilsPath, 'utf8');
+          // Process any imports in utils (though it shouldn't have any)
           // Pass processingUtils=true to prevent infinite recursion
           const utilsDir = path.dirname(utilsPath);
           utilsContent = processHtmlImports(utilsContent, utilsDir);
@@ -197,7 +288,7 @@ function processJsImports(jsContent, variantPath, projectPath, processingUtils =
             processedContent = processedContent.replace(fullMatch, `const ${varName} = {};`);
           }
         } else {
-          console.warn(`[ELI] Utils file not found: ${utilsPath}`);
+          console.warn(`[ELI] @eli/utils not found. Install it via: npm install @briannorman9/eli-utils`);
           processedContent = processedContent.replace(fullMatch, `const ${varName} = {};`);
         }
       } catch (error) {
@@ -207,7 +298,12 @@ function processJsImports(jsContent, variantPath, projectPath, processingUtils =
       continue;
     }
     
-    // Skip if not a .js file (might be HTML or SCSS)
+    // Skip HTML and SCSS imports - they should already be processed by processHtmlImports and processScssImports
+    if (importPath.endsWith('.html') || importPath.endsWith('.scss') || importPath.endsWith('.css')) {
+      continue;
+    }
+    
+    // Skip if not a .js file (might be other file types)
     if (!importPath.endsWith('.js') && !importPath.startsWith('./') && !importPath.startsWith('../')) {
       continue;
     }
@@ -274,7 +370,8 @@ function processJsImports(jsContent, variantPath, projectPath, processingUtils =
 
 // Get JS file in a variant folder (finds any .js file in the variant folder)
 function getVariantScript(projectName, variantName) {
-  const variantPath = path.join(PROJECTS_DIR, projectName, variantName);
+  const actualProjectsDir = getActualProjectsDir();
+  const variantPath = path.join(actualProjectsDir, projectName, variantName);
   try {
     const entries = fs.readdirSync(variantPath, { withFileTypes: true });
     const jsFiles = entries
@@ -286,7 +383,7 @@ function getVariantScript(projectName, variantName) {
       // Return the first JS file found (or prefer one matching the variant name)
       const preferredFile = jsFiles.find(f => f === `${variantName}.js`) || jsFiles[0];
       const scriptPath = path.join(variantPath, preferredFile);
-      const projectPath = path.join(PROJECTS_DIR, projectName);
+      const projectPath = path.join(actualProjectsDir, projectName);
       let content = fs.readFileSync(scriptPath, 'utf8');
       
       // Process HTML imports
@@ -383,13 +480,25 @@ function minifyCss(css) {
 }
 
 // Save minified script to disk
-async function saveMinifiedScript(projectName, variantName, minifiedCode, silent = false) {
+async function saveMinifiedScript(projectName, variantName, minifiedCode, jsFileName = null, silent = false) {
   try {
-    const variantPath = path.join(PROJECTS_DIR, projectName, variantName);
-    const minifiedPath = path.join(variantPath, `${variantName}.min.js`);
+    const actualProjectsDir = getActualProjectsDir();
+    const variantPath = path.join(actualProjectsDir, projectName, variantName);
+    
+    // Determine the minified file name
+    let minifiedFileName;
+    if (jsFileName) {
+      // Use the JS file name (e.g., v2.js -> v2.min.js)
+      minifiedFileName = jsFileName.replace(/\.js$/, '.min.js');
+    } else {
+      // Fallback to variant name if JS filename not provided
+      minifiedFileName = `${variantName}.min.js`;
+    }
+    
+    const minifiedPath = path.join(variantPath, minifiedFileName);
     fs.writeFileSync(minifiedPath, minifiedCode, 'utf8');
     if (!silent) {
-      console.log(`[ELI] Saved minified script: ${projectName}/${variantName}.min.js`);
+      console.log(`[ELI] Saved minified script: ${projectName}/${variantName}/${minifiedFileName}`);
     }
     return minifiedPath;
   } catch (error) {
@@ -401,7 +510,8 @@ async function saveMinifiedScript(projectName, variantName, minifiedCode, silent
 // Save minified CSS to disk
 function saveMinifiedCss(projectName, variantName, minifiedCss, silent = false) {
   try {
-    const variantPath = path.join(PROJECTS_DIR, projectName, variantName);
+    const actualProjectsDir = getActualProjectsDir();
+    const variantPath = path.join(actualProjectsDir, projectName, variantName);
     const minifiedPath = path.join(variantPath, `${variantName}.min.css`);
     fs.writeFileSync(minifiedPath, minifiedCss, 'utf8');
     if (!silent) {
@@ -573,7 +683,7 @@ const server = http.createServer((req, res) => {
           
           // Save to disk if requested
           if (shouldSave) {
-            await saveMinifiedScript(projectName, variantName, minifiedCode);
+            await saveMinifiedScript(projectName, variantName, minifiedCode, scriptData.filename);
           }
           
           res.writeHead(200, {
@@ -622,7 +732,7 @@ const server = http.createServer((req, res) => {
           // Optionally save minified version when regular script is requested
           if (shouldSaveMin) {
             const minifiedCode = await minifyScript(scriptData.content);
-            await saveMinifiedScript(projectName, variantName, minifiedCode);
+            await saveMinifiedScript(projectName, variantName, minifiedCode, scriptData.filename);
           }
           
           // Add cache busting timestamp
@@ -656,14 +766,15 @@ const server = http.createServer((req, res) => {
 // Auto-minify on file save
 async function autoMinifyOnSave(filePath) {
   try {
-    // Normalize paths to handle absolute/relative paths correctly
-    const normalizedFilePath = path.normalize(filePath);
-    const normalizedProjectsDir = path.normalize(PROJECTS_DIR);
+    // Resolve to absolute paths to handle any path format
+    const resolvedFilePath = path.resolve(filePath);
+    const actualProjectsDir = getActualProjectsDir();
+    const resolvedProjectsDir = path.resolve(actualProjectsDir);
     
     // Only process files in variant folders or shared.js at project root
-    const relativePath = path.relative(normalizedProjectsDir, normalizedFilePath);
+    const relativePath = path.relative(resolvedProjectsDir, resolvedFilePath);
     
-    // Skip if file is outside PROJECTS_DIR (path.relative returns path starting with ..)
+    // Skip if file is outside actual projects dir (path.relative returns path starting with ..)
     if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
       return;
     }
@@ -706,13 +817,15 @@ async function autoMinifyOnSave(filePath) {
 // Minify a specific variant
 async function minifyVariant(projectName, variantName, silent = true) {
   try {
-    const variantPath = path.join(PROJECTS_DIR, projectName, variantName);
+    const actualProjectsDir = getActualProjectsDir();
+    const variantPath = path.join(actualProjectsDir, projectName, variantName);
     
     // Minify JavaScript
     const scriptData = getVariantScript(projectName, variantName);
     if (scriptData && scriptData.content) {
       const minifiedCode = await minifyScript(scriptData.content);
-      await saveMinifiedScript(projectName, variantName, minifiedCode, silent);
+      // Pass the JS filename so the minified file matches (e.g., v2.js -> v2.min.js)
+      await saveMinifiedScript(projectName, variantName, minifiedCode, scriptData.filename, silent);
       if (!silent) {
         console.log(`[ELI] Successfully minified JS for ${projectName}/${variantName}`);
       }
@@ -788,14 +901,17 @@ function setupFileWatcher() {
     fileWatcher = null;
   }
 
+  const actualProjectsDir = getActualProjectsDir();
+  
   // Check if directory exists before setting up watcher
-  if (!fs.existsSync(PROJECTS_DIR)) {
-    console.warn(`[ELI] Projects directory does not exist: ${PROJECTS_DIR}. File watcher not started.`);
+  if (!fs.existsSync(actualProjectsDir)) {
+    console.warn(`[ELI] Projects directory does not exist: ${actualProjectsDir}. File watcher not started.`);
+    console.warn(`[ELI] Configure the projects directory via the Chrome extension or set PROJECTS_DIR environment variable.`);
     return;
   }
 
   try {
-    fileWatcher = chokidar.watch(PROJECTS_DIR, {
+    fileWatcher = chokidar.watch(actualProjectsDir, {
       ignored: /(^|[\/\\])\../, // ignore dotfiles
       persistent: true,
       ignoreInitial: true, // Don't process existing files on startup
@@ -822,7 +938,7 @@ function setupFileWatcher() {
       console.error(`[ELI] File watcher error:`, error);
     });
 
-    console.log(`[ELI] File watcher active for: ${PROJECTS_DIR}`);
+    console.log(`[ELI] File watcher active for: ${actualProjectsDir}`);
   } catch (error) {
     console.error(`[ELI] Error setting up file watcher:`, error);
   }
@@ -831,10 +947,19 @@ function setupFileWatcher() {
 server.listen(PORT, () => {
   console.log(`Development server running on http://localhost:${PORT}`);
   console.log(`Projects directory: ${PROJECTS_DIR}`);
+  const actualProjectsDir = getActualProjectsDir();
+  if (actualProjectsDir !== PROJECTS_DIR) {
+    console.log(`(Using nested projects folder: ${actualProjectsDir})`);
+  }
   console.log(`\nAvailable projects: ${getProjects().join(', ') || 'none'}`);
   console.log('\nServer ready! Make changes to your project scripts and reload the page.');
   
-  // Start file watcher for auto-minification
-  setupFileWatcher();
+  // Start file watcher for auto-minification (only if directory exists)
+  // If directory doesn't exist, the watcher will be set up when the directory is configured via API
+  if (fs.existsSync(actualProjectsDir)) {
+    setupFileWatcher();
+  } else {
+    console.log(`[ELI] Projects directory does not exist yet. File watcher will start when directory is configured.`);
+  }
 });
 

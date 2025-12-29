@@ -367,19 +367,48 @@ async function init() {
   
   // Load saved projects directory preference
   const prefs = await loadSavedPreferences();
-  if (prefs.projectsDir) {
-    projectsDirInput.value = prefs.projectsDir;
-  }
   
   // Fetch current projects directory from server
   const currentProjectsDir = await fetchProjectsDir();
-  if (currentProjectsDir) {
+  
+  // If we have a saved preference and it's different from the server's current directory,
+  // automatically set it on the server to restore the user's preference
+  if (prefs.projectsDir && prefs.projectsDir !== currentProjectsDir) {
+    projectsDirInput.value = prefs.projectsDir;
+    projectsDirStatus.textContent = 'Restoring saved directory...';
+    projectsDirStatus.style.color = '#666';
+    
+    // Automatically set the saved directory on the server
+    const result = await setProjectsDirOnServer(prefs.projectsDir);
+    if (result.success) {
+      projectsDirInput.value = result.projectsDir;
+      projectsDirStatus.textContent = `Restored: ${result.projectsDir}`;
+      projectsDirStatus.style.color = '#28a745';
+    } else {
+      // If setting failed, show the saved value but indicate it needs to be set
+      projectsDirInput.value = prefs.projectsDir;
+      projectsDirStatus.textContent = `Saved: ${prefs.projectsDir} (click Set to apply)`;
+      projectsDirStatus.style.color = '#ffc107';
+    }
+  } else if (currentProjectsDir) {
+    // Use the server's current directory
     projectsDirInput.value = currentProjectsDir;
     projectsDirStatus.textContent = `Current: ${currentProjectsDir}`;
     projectsDirStatus.style.color = '#28a745';
+    
+    // Save it if it's not already saved
+    if (!prefs.projectsDir || prefs.projectsDir !== currentProjectsDir) {
+      await saveProjectsDir(currentProjectsDir);
+    }
+  } else if (prefs.projectsDir) {
+    // We have a saved preference but couldn't fetch from server
+    projectsDirInput.value = prefs.projectsDir;
+    projectsDirStatus.textContent = `Saved: ${prefs.projectsDir} (click Set to apply)`;
+    projectsDirStatus.style.color = '#ffc107';
   } else {
-    projectsDirStatus.textContent = 'Unable to fetch current directory';
-    projectsDirStatus.style.color = '#dc3545';
+    // No saved preference and couldn't fetch from server
+    projectsDirStatus.textContent = 'No directory configured';
+    projectsDirStatus.style.color = '#666';
   }
   
   // Function to set projects directory

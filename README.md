@@ -11,7 +11,7 @@ A local development interface for creating and testing web experiments. This too
 - 🎯 **Easy injection**: Select a project and variant from the extension popup and inject it into any page
 - ⚡ **Auto-inject**: Optionally auto-inject your selected variant on every page load
 - 🗜️ **Auto-minification**: Minified files are automatically generated whenever you save your code
-- 🛠️ **Built-in utils**: Optimizely-style utility functions available via `@eli/utils`
+- 🛠️ **Built-in utils**: Utility functions available via `@eli/utils`
 - 👥 **Team-friendly**: Simple setup that works for everyone on your team
 
 ## Setup
@@ -79,7 +79,7 @@ The extension is decoupled from the projects folder. You can store your projects
 PROJECTS_DIR=/path/to/your/projects node bin/eli
 ```
 
-**Note:** If no directory is configured, the server defaults to `./projects` (relative to where the server is run) for backward compatibility.
+**Note:** If no directory is configured, the server defaults to the `projects` folder in the ELI extension directory (`/path/to/eli/projects`) for backward compatibility. You can place your projects directly in this folder, or configure a custom location via the extension UI.
 
 ### 5. Create Your First Project
 
@@ -192,10 +192,37 @@ shared(); // Executes the code in shared.js
 
 ### Built-in Utils
 
-ELI provides a built-in utils object with Optimizely-style utility functions. Import it using:
+ELI provides a built-in utils object with utility functions for web experiments. You can use utils in two ways:
+
+**Option 1: Install as npm package (Recommended for projects)**
+
+Install `@briannorman9/eli-utils` in your projects directory:
+
+```bash
+cd /path/to/your/projects
+npm install @briannorman9/eli-utils
+```
+
+Then import it in your variant code:
 
 ```javascript
 import utils from '@eli/utils';
+```
+
+**Option 2: Use built-in utils (Automatic fallback)**
+
+If `@eli/utils` is not installed in your projects directory, the server will automatically use the built-in utils from the extension. No installation needed - just import:
+
+```javascript
+import utils from '@eli/utils';
+```
+
+**Note:** The server will first check for `@briannorman9/eli-utils` in your project's `node_modules`, then fall back to the built-in version. This allows you to:
+- Use the built-in version without any setup (works out of the box)
+- Install a specific version in your projects for version control
+- Share projects via the [demo projects repo](https://github.com/briannorman/eli-demo-projects) with dependencies
+
+**Usage example:**
 
 // Wait for an element to appear
 utils.waitForElement('#myElement').then(element => {
@@ -242,6 +269,8 @@ utils.triggerEvent('experimentLoaded', { variant: 'v1' });
 - `getViewport()` - Get viewport dimensions
 - `isInViewport(element, threshold)` - Check if element is in viewport
 - `scrollIntoView(element, options)` - Scroll element into view
+
+**For the npm package:** Install `@briannorman9/eli-utils` from npm. See [npm package](https://www.npmjs.com/package/@briannorman9/eli-utils) for full documentation.
 
 ## Project Structure
 

@@ -1,4 +1,4 @@
-// ELI Utils - Optimizely-style utility functions
+// ELI Utils - Utility functions for web experiments
 // This file can be imported in variant code using: import utils from '@eli/utils';
 
 export default {
@@ -98,6 +98,40 @@ export default {
   getQueryParam: function(name, url = window.location.href) {
     const urlObj = new URL(url);
     return urlObj.searchParams.get(name);
+  },
+
+  /**
+   * Trigger a custom event
+   * @param {string} eventName - Event name
+   * @param {Object} data - Event data
+   * @param {Element|string} target - Target element (defaults to document)
+   */
+  triggerEvent: function(eventName, data = {}, target = document) {
+    const targetEl = typeof target === 'string' ? document.querySelector(target) : target;
+    if (targetEl) {
+      const event = new CustomEvent(eventName, { detail: data });
+      targetEl.dispatchEvent(event);
+    }
+  },
+
+  /**
+   * Select a single element
+   * @param {string} selector - CSS selector
+   * @param {Element} context - Context element (defaults to document)
+   * @returns {Element|null} Element or null if not found
+   */
+  select: function(selector, context = document) {
+    return context.querySelector(selector);
+  },
+
+  /**
+   * Select multiple elements
+   * @param {string} selector - CSS selector
+   * @param {Element} context - Context element (defaults to document)
+   * @returns {NodeList} NodeList of elements
+   */
+  selectAll: function(selector, context = document) {
+    return context.querySelectorAll(selector);
   },
 
   /**
