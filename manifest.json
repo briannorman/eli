@@ -5,6 +5,7 @@
   "description": "Local development interface for web experiments with hot reloading",
   "author": "Brian Norman",
   "homepage_url": "https://github.com/briannorman/eli",
+  "privacy_policy": "https://briannorman.github.io/eli/privacy-policy.html",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
