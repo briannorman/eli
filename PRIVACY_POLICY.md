@@ -1,6 +1,6 @@
 # Privacy Policy for Experimentation Local Interface
 
-**Last Updated:** [Date]
+**Last Updated:** 12/29/2025
 
 ## Overview
 
