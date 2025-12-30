@@ -399,9 +399,13 @@ function getVariantScript(projectName, variantName) {
         throw error;
       }
       
+      // Wrap the entire code in an IIFE to prevent variable redeclaration errors
+      // when the script is injected multiple times. This creates a new scope for each injection.
+      const wrappedContent = `(function() {\n${content}\n})();`;
+      
       return {
         filename: preferredFile,
-        content: content
+        content: wrappedContent
       };
     } else {
       console.warn(`[ELI] No JS files found in variant ${variantName} for project ${projectName}`);
