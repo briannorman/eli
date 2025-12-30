@@ -283,8 +283,38 @@ async function injectScript(projectName, variantName) {
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         world: 'MAIN', // Execute in main world
-        func: (code) => {
+        func: (code, projectName, variantName) => {
           try {
+            const injectionKey = `${projectName}/${variantName}`;
+            
+            // Check if a script with this exact injection key already exists in the DOM
+            const existingScript = document.querySelector(`script[data-eli-injected="${injectionKey}"]`);
+            if (existingScript) {
+              // For manual injection, remove the old one first to allow re-injection
+              existingScript.remove();
+            }
+            
+            // Set the flag IMMEDIATELY to prevent race conditions
+            // For manual injection, we always want to inject (user requested it)
+            window.__eli_last_injected = injectionKey;
+            
+            // Remove any previously injected ELI scripts with different keys to prevent conflicts
+            const existingScripts = document.querySelectorAll('script[data-eli-injected]');
+            existingScripts.forEach(script => {
+              if (script.getAttribute('data-eli-injected') !== injectionKey) {
+                script.remove();
+              }
+            });
+            
+            // Also remove any script tags with data URLs that look like ELI scripts (legacy cleanup)
+            const allScripts = document.querySelectorAll('script[src^="data:text/javascript"]');
+            allScripts.forEach(script => {
+              if ((script.src.includes('base64') || script.hasAttribute('data-eli-injected')) && 
+                  script.getAttribute('data-eli-injected') !== injectionKey) {
+                script.remove();
+              }
+            });
+            
             // Mark that we've injected (store in window for tracking)
             if (!window.__eli_injected) {
               window.__eli_injected = [];
@@ -298,8 +328,10 @@ async function injectScript(projectName, variantName) {
             // Create and inject script element with data URL
             const script = document.createElement('script');
             script.src = dataUrl;
+            script.setAttribute('data-eli-injected', injectionKey);
             script.onload = () => {
               window.__eli_injected.push(Date.now());
+              window.__eli_last_injected = injectionKey;
             };
             script.onerror = (error) => {
               console.error('[ELI] Data URL script loading failed, trying blob URL:', error);
@@ -311,9 +343,11 @@ async function injectScript(projectName, variantName) {
                 
                 const blobScript = document.createElement('script');
                 blobScript.src = blobUrl;
+                blobScript.setAttribute('data-eli-injected', injectionKey);
                 blobScript.onload = () => {
                   URL.revokeObjectURL(blobUrl);
                   window.__eli_injected.push(Date.now());
+                  window.__eli_last_injected = injectionKey;
                 };
                 blobScript.onerror = (blobError) => {
                   URL.revokeObjectURL(blobUrl);
@@ -331,7 +365,7 @@ async function injectScript(projectName, variantName) {
             console.error('[ELI] Script injection error:', error);
           }
         },
-        args: [scriptText]
+        args: [scriptText, projectName, variantName]
       });
     } catch (scriptingError) {
       // Handle Chrome scripting API errors (e.g., chrome:// URLs)

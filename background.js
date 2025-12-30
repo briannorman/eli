@@ -56,8 +56,48 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
             chrome.scripting.executeScript({
               target: { tabId: tabId },
               world: 'MAIN', // Execute in main world
-              func: (code) => {
+              func: (code, projectName, variantName) => {
                 try {
+                  const injectionKey = `${projectName}/${variantName}`;
+                  
+                  // Check if a script with this exact injection key already exists in the DOM
+                  // This prevents multiple injections on the same page load
+                  const existingScript = document.querySelector(`script[data-eli-injected="${injectionKey}"]`);
+                  if (existingScript) {
+                    console.log(`[ELI] Skipping injection of ${injectionKey} - script already exists in DOM`);
+                    return;
+                  }
+                  
+                  // Check if we've already injected this exact project/variant combination
+                  // This prevents redeclaration errors on SPA navigation where window persists
+                  // On full page reloads, window is reset so this check will pass
+                  if (window.__eli_last_injected === injectionKey) {
+                    // Already injected this combination - skip to prevent redeclaration
+                    console.log(`[ELI] Skipping injection of ${injectionKey} - already injected (window flag)`);
+                    return;
+                  }
+                  
+                  // Set the flag IMMEDIATELY to prevent race conditions from multiple listener fires
+                  // This must happen before any async operations
+                  window.__eli_last_injected = injectionKey;
+                  
+                  // Remove any previously injected ELI scripts with different keys to prevent conflicts
+                  const existingScripts = document.querySelectorAll('script[data-eli-injected]');
+                  existingScripts.forEach(script => {
+                    if (script.getAttribute('data-eli-injected') !== injectionKey) {
+                      script.remove();
+                    }
+                  });
+                  
+                  // Also remove any script tags with data URLs that look like ELI scripts (legacy cleanup)
+                  const allScripts = document.querySelectorAll('script[src^="data:text/javascript"]');
+                  allScripts.forEach(script => {
+                    if ((script.src.includes('base64') || script.hasAttribute('data-eli-injected')) && 
+                        script.getAttribute('data-eli-injected') !== injectionKey) {
+                      script.remove();
+                    }
+                  });
+                  
                   // Mark that we've injected (store in window for tracking)
                   if (!window.__eli_injected) {
                     window.__eli_injected = [];
@@ -71,8 +111,10 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
                   // Create and inject script element with data URL
                   const script = document.createElement('script');
                   script.src = dataUrl;
+                  script.setAttribute('data-eli-injected', injectionKey);
                   script.onload = () => {
                     window.__eli_injected.push(Date.now());
+                    window.__eli_last_injected = injectionKey;
                   };
                   script.onerror = (error) => {
                     console.error('[ELI] Data URL script loading failed, trying blob URL:', error);
@@ -84,9 +126,11 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
                       
                       const blobScript = document.createElement('script');
                       blobScript.src = blobUrl;
+                      blobScript.setAttribute('data-eli-injected', injectionKey);
                       blobScript.onload = () => {
                         URL.revokeObjectURL(blobUrl);
                         window.__eli_injected.push(Date.now());
+                        window.__eli_last_injected = injectionKey;
                       };
                       blobScript.onerror = (blobError) => {
                         URL.revokeObjectURL(blobUrl);
@@ -104,7 +148,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
                   console.error('[ELI] Auto-injection error:', error);
                 }
               },
-              args: [scriptText]
+              args: [scriptText, result.selectedProject, result.selectedVariant]
             });
           }
         }
