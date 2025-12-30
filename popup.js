@@ -389,12 +389,6 @@ function updateUIForExtensionState(enabled) {
 
 // Initialize popup
 async function init() {
-  // Set version in footer
-  const versionEl = document.getElementById('version');
-  if (versionEl) {
-    versionEl.textContent = 'v1.0.0';
-  }
-  
   // Load and display current projects directory
   const projectsDirInput = document.getElementById('projectsDirInput');
   const setProjectsDirBtn = document.getElementById('setProjectsDirBtn');
