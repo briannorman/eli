@@ -6,13 +6,19 @@ let selectedVariant = null;
 
 // Load saved preferences
 async function loadSavedPreferences() {
-  const result = await chrome.storage.local.get(['selectedProject', 'selectedVariant', 'autoInject', 'projectsDir']);
+  const result = await chrome.storage.local.get(['selectedProject', 'selectedVariant', 'autoInject', 'projectsDir', 'extensionEnabled']);
   return {
     project: result.selectedProject || null,
     variant: result.selectedVariant || null,
     autoInject: result.autoInject || false,
-    projectsDir: result.projectsDir || null
+    projectsDir: result.projectsDir || null,
+    extensionEnabled: result.extensionEnabled !== undefined ? result.extensionEnabled : true
   };
+}
+
+// Save extension enabled state
+async function saveExtensionEnabled(enabled) {
+  await chrome.storage.local.set({ extensionEnabled: enabled });
 }
 
 // Save projects directory preference
@@ -225,6 +231,13 @@ function isInjectableUrl(url) {
 // Inject script into current tab
 async function injectScript(projectName, variantName) {
   try {
+    // Check if extension is enabled
+    const prefs = await loadSavedPreferences();
+    if (!prefs.extensionEnabled) {
+      showStatus('Extension is disabled. Enable it to inject scripts.', 'error');
+      return;
+    }
+    
     if (!variantName) {
       showStatus('Please select a variant to inject', 'error');
       return;
@@ -358,15 +371,50 @@ async function reloadCurrentPage() {
   }
 }
 
+// Update UI based on extension enabled state
+function updateUIForExtensionState(enabled) {
+  const contentArea = document.getElementById('contentArea');
+  const injectBtn = document.getElementById('injectBtn');
+  const autoInjectCheck = document.getElementById('autoInjectCheck');
+  
+  if (enabled) {
+    contentArea.classList.remove('disabled-overlay');
+    injectBtn.disabled = !selectedProject || !selectedVariant;
+  } else {
+    contentArea.classList.add('disabled-overlay');
+    injectBtn.disabled = true;
+    autoInjectCheck.disabled = true;
+  }
+}
+
 // Initialize popup
 async function init() {
+  // Set version in footer
+  const versionEl = document.getElementById('version');
+  if (versionEl) {
+    versionEl.textContent = 'v1.0.0';
+  }
+  
   // Load and display current projects directory
   const projectsDirInput = document.getElementById('projectsDirInput');
   const setProjectsDirBtn = document.getElementById('setProjectsDirBtn');
   const projectsDirStatus = document.getElementById('projectsDirStatus');
+  const extensionToggle = document.getElementById('extensionToggle');
   
-  // Load saved projects directory preference
+  // Load saved preferences
   const prefs = await loadSavedPreferences();
+  
+  // Set extension toggle state
+  extensionToggle.checked = prefs.extensionEnabled;
+  updateUIForExtensionState(prefs.extensionEnabled);
+  
+  // Handle extension toggle
+  extensionToggle.addEventListener('change', async (e) => {
+    const enabled = e.target.checked;
+    await saveExtensionEnabled(enabled);
+    updateUIForExtensionState(enabled);
+    showStatus(enabled ? 'Extension enabled' : 'Extension disabled', enabled ? 'success' : 'info');
+  });
   
   // Fetch current projects directory from server
   const currentProjectsDir = await fetchProjectsDir();
@@ -375,26 +423,26 @@ async function init() {
   // automatically set it on the server to restore the user's preference
   if (prefs.projectsDir && prefs.projectsDir !== currentProjectsDir) {
     projectsDirInput.value = prefs.projectsDir;
-    projectsDirStatus.textContent = 'Restoring saved directory...';
-    projectsDirStatus.style.color = '#666';
+    projectsDirStatus.textContent = '⏳ Restoring saved directory...';
+    projectsDirStatus.className = 'status-text';
     
     // Automatically set the saved directory on the server
     const result = await setProjectsDirOnServer(prefs.projectsDir);
     if (result.success) {
       projectsDirInput.value = result.projectsDir;
-      projectsDirStatus.textContent = `Restored: ${result.projectsDir}`;
-      projectsDirStatus.style.color = '#28a745';
+      projectsDirStatus.textContent = `✓ Restored: ${result.projectsDir}`;
+      projectsDirStatus.className = 'status-text success';
     } else {
       // If setting failed, show the saved value but indicate it needs to be set
       projectsDirInput.value = prefs.projectsDir;
-      projectsDirStatus.textContent = `Saved: ${prefs.projectsDir} (click Set to apply)`;
-      projectsDirStatus.style.color = '#ffc107';
+      projectsDirStatus.textContent = `⚠ Saved: ${prefs.projectsDir} (click Set to apply)`;
+      projectsDirStatus.className = 'status-text warning';
     }
   } else if (currentProjectsDir) {
     // Use the server's current directory
     projectsDirInput.value = currentProjectsDir;
-    projectsDirStatus.textContent = `Current: ${currentProjectsDir}`;
-    projectsDirStatus.style.color = '#28a745';
+    projectsDirStatus.textContent = '';
+    projectsDirStatus.className = 'status-text';
     
     // Save it if it's not already saved
     if (!prefs.projectsDir || prefs.projectsDir !== currentProjectsDir) {
@@ -403,12 +451,12 @@ async function init() {
   } else if (prefs.projectsDir) {
     // We have a saved preference but couldn't fetch from server
     projectsDirInput.value = prefs.projectsDir;
-    projectsDirStatus.textContent = `Saved: ${prefs.projectsDir} (click Set to apply)`;
-    projectsDirStatus.style.color = '#ffc107';
+    projectsDirStatus.textContent = `⚠ Saved: ${prefs.projectsDir} (click Set to apply)`;
+    projectsDirStatus.className = 'status-text warning';
   } else {
     // No saved preference and couldn't fetch from server
     projectsDirStatus.textContent = 'No directory configured';
-    projectsDirStatus.style.color = '#666';
+    projectsDirStatus.className = 'status-text';
   }
   
   // Function to set projects directory
@@ -421,29 +469,29 @@ async function init() {
     
     setProjectsDirBtn.disabled = true;
     setProjectsDirBtn.textContent = 'Setting...';
-    projectsDirStatus.textContent = 'Setting directory...';
-    projectsDirStatus.style.color = '#666';
+    projectsDirStatus.textContent = '⏳ Setting directory...';
+    projectsDirStatus.className = 'status-text';
     
     const result = await setProjectsDirOnServer(projectsDir);
     
     if (result.success) {
       await saveProjectsDir(result.projectsDir);
       projectsDirInput.value = result.projectsDir;
-      projectsDirStatus.textContent = `Set to: ${result.projectsDir}`;
-      projectsDirStatus.style.color = '#28a745';
+      projectsDirStatus.textContent = `✓ Set to: ${result.projectsDir}`;
+      projectsDirStatus.className = 'status-text success';
       showStatus('Projects directory updated successfully', 'success');
       
       // Reload projects after directory change
       projects = await fetchProjects();
       populateProjects(projects);
     } else {
-      projectsDirStatus.textContent = `Error: ${result.error}`;
-      projectsDirStatus.style.color = '#dc3545';
+      projectsDirStatus.textContent = `✗ Error: ${result.error}`;
+      projectsDirStatus.className = 'status-text error';
       showStatus(`Failed to set projects directory: ${result.error}`, 'error');
     }
     
     setProjectsDirBtn.disabled = false;
-    setProjectsDirBtn.textContent = 'Set';
+    setProjectsDirBtn.textContent = 'Set Directory';
   }
   
   // Handle set projects directory button
@@ -511,7 +559,15 @@ async function init() {
   });
   
   // Auto-inject checkbox
-  document.getElementById('autoInjectCheck').addEventListener('change', async (e) => {
+  const autoInjectCheck = document.getElementById('autoInjectCheck');
+  autoInjectCheck.disabled = !prefs.extensionEnabled;
+  autoInjectCheck.addEventListener('change', async (e) => {
+    const prefs = await loadSavedPreferences();
+    if (!prefs.extensionEnabled) {
+      e.target.checked = false;
+      showStatus('Enable the extension first to use auto-inject', 'error');
+      return;
+    }
     await saveAutoInject(e.target.checked);
     showStatus(e.target.checked ? 'Auto-inject enabled' : 'Auto-inject disabled', 'success');
   });

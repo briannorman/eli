@@ -21,10 +21,13 @@ function urlMatchesAnyPattern(url, patterns) {
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   // Only auto-inject on complete page loads (not iframes)
   if (changeInfo.status === 'complete' && tab.url && tabId && tab.url.startsWith('http')) {
-    // Check if auto-inject is enabled and get selected project
-    const result = await chrome.storage.local.get(['autoInject', 'selectedProject', 'selectedVariant']);
+    // Check if extension is enabled
+    const result = await chrome.storage.local.get(['extensionEnabled', 'autoInject', 'selectedProject', 'selectedVariant']);
     
-    if (result.autoInject && result.selectedProject && result.selectedVariant) {
+    // Default to enabled if not set (for backward compatibility)
+    const extensionEnabled = result.extensionEnabled !== undefined ? result.extensionEnabled : true;
+    
+    if (extensionEnabled && result.autoInject && result.selectedProject && result.selectedVariant) {
       try {
         // Get project config to check URL patterns
         const configResponse = await fetch(`http://localhost:8000/api/project/${result.selectedProject}/config`);
