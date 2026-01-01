@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Experimentation Local Interface",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Local development interface for web experiments with hot reloading",
   "author": "Brian Norman",
   "homepage_url": "https://github.com/briannorman/eli",

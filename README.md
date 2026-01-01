@@ -2,6 +2,101 @@
 
 A local development interface for creating and testing web experiments. This tool allows you to organize experiments in separate project folders and inject them into any web page via a Chrome extension.
 
+## 🚀 Getting Started
+
+### Step 1: Install the Chrome Extension
+
+Install ELI from the [Chrome Web Store](https://chromewebstore.google.com/detail/experimentation-local-int/djpponkkeajfghnjjhlgjoaioalnfkhd):
+
+1. Visit the [Chrome Web Store listing](https://chromewebstore.google.com/detail/experimentation-local-int/djpponkkeajfghnjjhlgjoaioalnfkhd)
+2. Click **"Add to Chrome"**
+3. Confirm the installation
+4. The ELI icon should appear in your Chrome toolbar
+
+### Step 2: Install the Development Server
+
+The extension requires a local development server to serve your experiment scripts. Install it with:
+
+```bash
+npm install -g eli-web-experiments
+```
+
+Or clone this repository and install dependencies:
+
+```bash
+git clone https://github.com/briannorman/eli.git
+cd eli
+npm install
+```
+
+### Step 3: Start the Development Server
+
+Start the server using one of these methods:
+
+**Option A: If installed globally**
+```bash
+eli
+```
+
+**Option B: Using npx (no installation needed)**
+```bash
+npx eli-web-experiments
+```
+
+**Option C: From the cloned repository**
+```bash
+npm start
+```
+
+The server will start on `http://localhost:8000`. Keep this terminal window open while developing.
+
+### Step 4: Configure Your Projects Directory
+
+1. Click the ELI extension icon in your Chrome toolbar
+2. In the "Projects Directory" field, enter the full path to where you want to store your experiments
+   - **Mac/Linux example:** `/Users/username/my-experiments`
+   - **Windows example:** `C:\Users\username\my-experiments`
+3. Click **"Set"**
+4. The extension will validate the directory and load projects from that location
+
+### Step 5: Create Your First Experiment
+
+1. Create a project folder in your configured projects directory:
+   ```bash
+   mkdir /path/to/your/projects/my-first-experiment
+   ```
+
+2. Create a variant folder inside your project:
+   ```bash
+   mkdir /path/to/your/projects/my-first-experiment/v1
+   ```
+
+3. Create a JavaScript file in the variant folder:
+   ```bash
+   touch /path/to/your/projects/my-first-experiment/v1/v1.js
+   ```
+
+4. Add some code to your experiment:
+   ```javascript
+   // v1.js
+   console.log('Hello from ELI!');
+   document.body.style.backgroundColor = 'lightblue';
+   ```
+
+5. In the extension popup:
+   - Select "my-first-experiment" from the project dropdown
+   - Select "v1" from the variant dropdown
+   - Click **"Inject Script"**
+
+6. Your experiment is now running on the current page! 🎉
+
+### Next Steps
+
+- **Enable Auto-inject**: Check the "Auto-inject on page load" box to automatically inject your experiment when you navigate to new pages
+- **Add HTML/SCSS**: Create `v1.html` and `v1.scss` files and import them in your JS file
+- **Create More Variants**: Add `v2`, `v3`, etc. folders to test different versions
+- **Read the full documentation** below for advanced features
+
 ## Features
 
 - 📁 **Flexible project organization**: Configure your projects directory anywhere on your system - no longer tied to the extension folder
@@ -14,108 +109,57 @@ A local development interface for creating and testing web experiments. This too
 - 🛠️ **Utils package**: Utility functions available via `@eli/utils` npm package
 - 👥 **Team-friendly**: Simple setup that works for everyone on your team
 
-## Setup
+## Setup (For Development)
 
-### 1. Install Dependencies
+> **Note:** If you're just getting started, see the [Getting Started](#-getting-started) section above. This section is for developers who want to contribute or run ELI from source.
 
-This project requires Node.js (v12 or higher). Install dependencies with:
+### Prerequisites
+
+- Node.js v12 or higher
+- Chrome browser
+
+### Install Dependencies
+
+If you're running ELI from source, install dependencies:
 
 ```bash
 npm install
 ```
 
-This will install the required packages:
+This installs:
 - `sass` - For SCSS compilation
 - `terser` - For JavaScript minification
 - `chokidar` - For file watching and auto-minification
 
-### 2. Start the Development Server
+### Running from Source
 
-You can start the server in several ways:
+**Option A: Use npm scripts**
+```bash
+npm start
+```
 
-**Option A: Install globally and use the `eli` command**
+**Option B: Run directly**
+```bash
+node bin/eli
+```
+
+**Option C: Install globally**
 ```bash
 npm install -g .
 eli
 ```
 
-**Option B: Use npx (no installation needed)**
-```bash
-npx eli
-```
+The server will start on `http://localhost:8000`.
 
-**Option C: Use npm scripts**
-```bash
-npm start
-```
+### Setting Projects Directory via Environment Variable
 
-**Option D: Run directly**
-```bash
-node bin/eli
-```
+You can also set the projects directory via environment variable:
 
-The server will start on `http://localhost:8000` and serve your project scripts.
-
-### 3. Load the Chrome Extension
-
-1. Open Chrome and navigate to `chrome://extensions/`
-2. Enable "Developer mode" (toggle in the top right)
-3. Click "Load unpacked"
-4. Select the `eli` folder (the folder containing this README)
-5. The extension icon should appear in your toolbar
-
-### 4. Configure Projects Directory
-
-The extension is decoupled from the projects folder. You can store your projects anywhere on your system.
-
-**Option A: Set via Extension UI (Recommended)**
-1. Click the extension icon in your Chrome toolbar
-2. In the "Projects Directory" field at the top, enter the full path to your projects folder (e.g., `/Users/username/my-experiments` or `C:\Users\username\my-experiments`)
-3. Click "Set"
-4. The extension will validate the directory and load projects from that location
-
-**Option B: Set via Environment Variable**
 ```bash
 PROJECTS_DIR=/path/to/your/projects node bin/eli
 ```
 
-**Note:** If no directory is configured, the server defaults to the `projects` folder in the ELI extension directory (`/path/to/eli/projects`) for backward compatibility. You can place your projects directly in this folder, or configure a custom location via the extension UI.
-
-### 5. Create Your First Project
-
-1. Create a new folder in your configured projects directory:
-   ```bash
-   mkdir /path/to/your/projects/my-experiment
-   ```
-
-2. Create variant folders (e.g., `v1`, `v2`) inside your project:
-   ```bash
-   mkdir /path/to/your/projects/my-experiment/v1
-   mkdir /path/to/your/projects/my-experiment/v2
-   ```
-
-3. Create a JavaScript file in each variant folder:
-   ```bash
-   touch /path/to/your/projects/my-experiment/v1/v1.js
-   touch /path/to/your/projects/my-experiment/v2/v2.js
-   ```
-
-4. Optionally add HTML and SCSS files to your variants:
-   ```bash
-   touch /path/to/your/projects/my-experiment/v1/v1.html
-   touch /path/to/your/projects/my-experiment/v1/v1.scss
-   ```
-
-5. Add your experiment code to the JS file:
-   ```javascript
-   import v1Html from './v1.html';
-   import v1Scss from './v1.scss';
-   
-   document.body.insertAdjacentHTML('afterbegin', v1Html);
-   console.log('My experiment is running!');
-   ```
-
-   **Note:** Config files are not required. Projects work with variant folders containing JS files. HTML and SCSS files are optional and can be imported as needed.
+**Note:** If no directory is configured, the server defaults to the `projects` folder in the ELI extension directory for backward compatibility.
 
 ## Usage
 
