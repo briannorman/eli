@@ -60,25 +60,24 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
                 try {
                   const injectionKey = `${projectName}/${variantName}`;
                   
-                  // Check if a script with this exact injection key already exists in the DOM
-                  // This prevents multiple injections on the same page load
+                  // For auto-inject: Check if already injected to prevent bfcache re-injection
+                  // This is the only difference from manual injection
                   const existingScript = document.querySelector(`script[data-eli-injected="${injectionKey}"]`);
                   if (existingScript) {
-                    console.log(`[ELI] Skipping injection of ${injectionKey} - script already exists in DOM`);
+                    // Already injected - skip to prevent redeclaration errors
                     return;
                   }
                   
-                  // Check if we've already injected this exact project/variant combination
-                  // This prevents redeclaration errors on SPA navigation where window persists
-                  // On full page reloads, window is reset so this check will pass
+                  // Check legacy flag as well
                   if (window.__eli_last_injected === injectionKey) {
-                    // Already injected this combination - skip to prevent redeclaration
-                    console.log(`[ELI] Skipping injection of ${injectionKey} - already injected (window flag)`);
-                    return;
+                    const checkScript = document.querySelector(`script[data-eli-injected="${injectionKey}"]`);
+                    if (checkScript) {
+                      return;
+                    }
+                    // Flag exists but script doesn't - might be stale, allow injection
                   }
                   
-                  // Set the flag IMMEDIATELY to prevent race conditions from multiple listener fires
-                  // This must happen before any async operations
+                  // Set the flag IMMEDIATELY to prevent race conditions
                   window.__eli_last_injected = injectionKey;
                   
                   // Remove any previously injected ELI scripts with different keys to prevent conflicts
@@ -116,8 +115,9 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
                     window.__eli_injected.push(Date.now());
                     window.__eli_last_injected = injectionKey;
                   };
-                  script.onerror = (error) => {
-                    console.error('[ELI] Data URL script loading failed, trying blob URL:', error);
+                  script.onerror = () => {
+                    // Data URL failed (expected on sites with strict CSP) - try blob URL fallback
+                    // Don't log the error object to reduce console noise
                     
                     // Fallback to blob URL if data URL fails
                     try {
@@ -132,20 +132,45 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
                         window.__eli_injected.push(Date.now());
                         window.__eli_last_injected = injectionKey;
                       };
-                      blobScript.onerror = (blobError) => {
+                      blobScript.onerror = () => {
                         URL.revokeObjectURL(blobUrl);
-                        console.error('[ELI] Both data URL and blob URL failed. CSP may be blocking all script injection methods:', blobError);
+                        
+                        // Try direct script text injection as final fallback
+                        try {
+                          const directScript = document.createElement('script');
+                          directScript.textContent = code;
+                          directScript.setAttribute('data-eli-injected', injectionKey);
+                          document.head.appendChild(directScript);
+                          
+                          window.__eli_injected.push(Date.now());
+                          window.__eli_last_injected = injectionKey;
+                          console.log('[ELI] Script injected via direct textContent method (blob URL was blocked)');
+                        } catch (directError) {
+                          console.error('[ELI] All script injection methods failed. The page\'s Content Security Policy is blocking script injection.');
+                        }
                       };
                       
                       document.head.appendChild(blobScript);
                     } catch (blobError) {
-                      console.error('[ELI] Failed to create blob URL fallback:', blobError);
+                      // Try direct script text injection as fallback
+                      try {
+                        const directScript = document.createElement('script');
+                        directScript.textContent = code;
+                        directScript.setAttribute('data-eli-injected', injectionKey);
+                        document.head.appendChild(directScript);
+                        
+                        window.__eli_injected.push(Date.now());
+                        window.__eli_last_injected = injectionKey;
+                        console.log('[ELI] Script injected via direct textContent method (blob creation failed)');
+                      } catch (directError) {
+                        console.error('[ELI] Failed to create blob URL and direct injection also failed. The page\'s Content Security Policy may be blocking all script injection methods.');
+                      }
                     }
                   };
                   
                   document.head.appendChild(script);
                 } catch (error) {
-                  console.error('[ELI] Auto-injection error:', error);
+                  console.error('[ELI] Script injection error:', error);
                 }
               },
               args: [scriptText, result.selectedProject, result.selectedVariant]

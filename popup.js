@@ -333,8 +333,9 @@ async function injectScript(projectName, variantName) {
               window.__eli_injected.push(Date.now());
               window.__eli_last_injected = injectionKey;
             };
-            script.onerror = (error) => {
-              console.error('[ELI] Data URL script loading failed, trying blob URL:', error);
+            script.onerror = () => {
+              // Data URL failed (expected on sites with strict CSP) - try blob URL fallback
+              // Don't log the error object to reduce console noise
               
               // Fallback to blob URL if data URL fails
               try {
@@ -349,14 +350,39 @@ async function injectScript(projectName, variantName) {
                   window.__eli_injected.push(Date.now());
                   window.__eli_last_injected = injectionKey;
                 };
-                blobScript.onerror = (blobError) => {
+                blobScript.onerror = () => {
                   URL.revokeObjectURL(blobUrl);
-                  console.error('[ELI] Both data URL and blob URL failed. CSP may be blocking all script injection methods:', blobError);
+                  
+                  // Try direct script text injection as final fallback
+                  try {
+                    const directScript = document.createElement('script');
+                    directScript.textContent = code;
+                    directScript.setAttribute('data-eli-injected', injectionKey);
+                    document.head.appendChild(directScript);
+                    
+                    window.__eli_injected.push(Date.now());
+                    window.__eli_last_injected = injectionKey;
+                    console.log('[ELI] Script injected via direct textContent method (blob URL was blocked)');
+                  } catch (directError) {
+                    console.error('[ELI] All script injection methods failed. The page\'s Content Security Policy is blocking script injection.');
+                  }
                 };
                 
                 document.head.appendChild(blobScript);
               } catch (blobError) {
-                console.error('[ELI] Failed to create blob URL fallback:', blobError);
+                // Try direct script text injection as fallback
+                try {
+                  const directScript = document.createElement('script');
+                  directScript.textContent = code;
+                  directScript.setAttribute('data-eli-injected', injectionKey);
+                  document.head.appendChild(directScript);
+                  
+                  window.__eli_injected.push(Date.now());
+                  window.__eli_last_injected = injectionKey;
+                  console.log('[ELI] Script injected via direct textContent method (blob creation failed)');
+                } catch (directError) {
+                  console.error('[ELI] Failed to create blob URL and direct injection also failed. The page\'s Content Security Policy may be blocking all script injection methods.');
+                }
               }
             };
             
